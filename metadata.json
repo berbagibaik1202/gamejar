@@ -1,0 +1,6 @@
+{
+  "name": "GAMEJar Network Lab",
+  "description": "Game pembelajaran interaktif untuk praktikum Teknik Komputer Jaringan (SMK TKJ) dengan simulasi konfigurasi server, VLAN, dan troubleshoot jaringan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

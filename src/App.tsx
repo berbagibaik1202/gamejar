@@ -1,0 +1,2129 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Play, CheckCircle, AlertTriangle, Cpu, Terminal as TerminalIcon, 
+  HelpCircle, Wifi, Database, Clock, RefreshCw, Send, ArrowRight,
+  Monitor, Network, Info, Server, BookOpen, Cable, Volume2, ShieldAlert
+} from 'lucide-react';
+
+// ============================================================================
+// STATIC DATA: MISSION BLUEPRINTS
+// ============================================================================
+interface Objective {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+interface Mission {
+  id: number;
+  code: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  difficulty: 'Mudah' | 'Sedang' | 'Sulit';
+  xpReward: number;
+  technicalGuide: string;
+  objectives: Objective[];
+}
+
+const MISSIONS_DATA: Mission[] = [
+  {
+    id: 1,
+    code: 'M01',
+    title: 'Konektivitas Dasar',
+    subtitle: 'Kabel UTP & IP Address',
+    description: 'PC Client-1 tidak bisa terhubung ke Jaringan Utama. Kabel UTP belum terpasang dan IP Address PC belum dikonfigurasikan. Hubungkan PC-1 ke port Fa0/1 Switch dan konfigurasikan IP Statis.',
+    difficulty: 'Mudah',
+    xpReward: 1000,
+    technicalGuide: '1. Pasang kabel LAN (UTP) dari PC-1 (FastEthernet0) ke Switch (Fa0/1).\n2. Atur IP PC-1: 192.168.1.2, Netmask: 255.255.255.0, Gateway: 192.168.1.1.\n3. Masuk ke Command Prompt PC-1, lakukan "ping 192.168.1.1".',
+    objectives: [
+      { id: 'm1_cable', text: 'Hubungkan PC-1 ke Switch Port Fa0/1 dengan Kabel UTP', completed: false },
+      { id: 'm1_ip', text: 'Atur IP Statis PC-1 ke 192.168.1.2 / Gateway 192.168.1.1', completed: false },
+      { id: 'm1_ping', text: 'Uji konektivitas dengan "ping 192.168.1.1" dari PC-1', completed: false }
+    ]
+  },
+  {
+    id: 2,
+    code: 'M02',
+    title: 'Konflik IP Address',
+    subtitle: 'Duplikasi IP di Subnet',
+    description: 'Ada gangguan koneksi berat di Lab. Setelah dianalisis, PC-2 dan PC-3 sama-sama menggunakan IP 192.168.1.10. Ubah IP PC-3 ke IP kosong yang aman yaitu 192.168.1.11.',
+    difficulty: 'Mudah',
+    xpReward: 1200,
+    technicalGuide: '1. Klik PC-3 lalu buka menu "Konfigurasi IP".\n2. Ubah IP Address PC-3 menjadi 192.168.1.11 (Netmask 255.255.255.0 tetap).\n3. Buka Command Prompt di PC-3 dan lakukan "ping 192.168.1.1" untuk memicu pembersihan ARP.',
+    objectives: [
+      { id: 'm2_change_ip', text: 'Ubah IP PC-3 menjadi 192.168.1.11', completed: false },
+      { id: 'm2_ping', text: 'Lakukan ping ke 192.168.1.1 dari PC-3 untuk verifikasi koneksi', completed: false }
+    ]
+  },
+  {
+    id: 3,
+    code: 'M03',
+    title: 'Segregasi VLAN',
+    subtitle: 'Virtual LAN Configuration',
+    description: 'Trafik data Departemen HR (Fa0/1 - Fa0/2) dan Departemen Finance (Fa0/3 - Fa0/4) saling bocor. Konfigurasikan VLAN 10 (HR) dan VLAN 20 (Finance) di Switch Utama via CLI.',
+    difficulty: 'Sedang',
+    xpReward: 1800,
+    technicalGuide: '1. Gunakan kabel Console dari Laptop Admin (RS232) ke Switch (Console).\n2. Masuk ke Terminal Laptop, ketik: "enable", "configure terminal".\n3. Buat vlan 10 ("vlan 10" -> "name HR") dan vlan 20 ("vlan 20" -> "name Finance").\n4. Alokasikan port Fa0/1 & Fa0/2 ke VLAN 10 ("interface range fa0/1 - 2" -> "switchport access vlan 10").\n5. Alokasikan port Fa0/3 & Fa0/4 ke VLAN 20 ("interface range fa0/3 - 4" -> "switchport access vlan 20").',
+    objectives: [
+      { id: 'm3_console', text: 'Pasang kabel Console dari Laptop Admin ke Switch Utama', completed: false },
+      { id: 'm3_vlan_create', text: 'Buat VLAN 10 (HR) dan VLAN 20 (Finance) di Switch', completed: false },
+      { id: 'm3_vlan_assign', text: 'Alokasikan port Fa0/1-2 ke VLAN 10, dan port Fa0/3-4 ke VLAN 20', completed: false }
+    ]
+  },
+  {
+    id: 4,
+    code: 'M04',
+    title: 'DHCP Server Otomatis',
+    subtitle: 'Layanan Alokasi IP Dinamis',
+    description: 'Konfigurasikan Router Utama sebagai DHCP Server agar semua PC client mendapatkan alokasi IP Address secara otomatis tanpa konfigurasi manual.',
+    difficulty: 'Sedang',
+    xpReward: 2000,
+    technicalGuide: '1. Buka CLI Router Utama (bisa via konsol atau klik Router).\n2. Ketik perintah: "enable" -> "configure terminal".\n3. Buat pool DHCP: "ip dhcp pool LAB-TKJ".\n4. Tentukan network: "network 192.168.1.0 255.255.255.0".\n5. Tentukan default router: "default-router 192.168.1.1".\n6. Klik PC-1 dan PC-2, ubah mode konfigurasi IP dari "Static" ke "DHCP".',
+    objectives: [
+      { id: 'm4_dhcp_router', text: 'Konfigurasi ip dhcp pool LAB-TKJ di Router', completed: false },
+      { id: 'm4_pc1_dhcp', text: 'Ubah konfigurasi IP PC-1 menjadi DHCP (Dapat IP Otomatis)', completed: false },
+      { id: 'm4_pc2_dhcp', text: 'Ubah konfigurasi IP PC-2 menjadi DHCP (Dapat IP Otomatis)', completed: false }
+    ]
+  },
+  {
+    id: 5,
+    code: 'M05',
+    title: 'Firewall Keamanan ACL',
+    subtitle: 'Access Control List (SSH Filter)',
+    description: 'Terjadi upaya peretasan brute force SSH (port 22) dari IP luar 10.10.10.50 ke Web Server (192.168.1.100). Buatlah Access Control List (ACL) nomor 101 di Router untuk memblokirnya.',
+    difficulty: 'Sulit',
+    xpReward: 2500,
+    technicalGuide: '1. Buka CLI Router Utama.\n2. Buat aturan ACL: "access-list 101 deny tcp host 10.10.10.50 host 192.168.1.100 eq 22".\n3. Tambahkan izin trafik lain: "access-list 101 permit ip any any".\n4. Masuk ke interface Gi0/0: "interface gigabitethernet 0/0".\n5. Terapkan ACL: "ip access-group 101 in".',
+    objectives: [
+      { id: 'm5_acl_rules', text: 'Buat aturan ACL 101 untuk blokir TCP port 22 dari 10.10.10.50', completed: false },
+      { id: 'm5_acl_permit', text: 'Tambahkan aturan permit ip any any di ACL 101', completed: false },
+      { id: 'm5_acl_apply', text: 'Terapkan ACL 101 pada interface Gi0/0 arah masuk (in)', completed: false }
+    ]
+  }
+];
+
+// ============================================================================
+// APP ENTRY POINT
+// ============================================================================
+export default function App() {
+  // Game state
+  const [currentScreen, setCurrentScreen] = useState<'lobby' | 'game' | 'handbook'>('lobby');
+  const [xp, setXp] = useState<number>(0);
+  const [unlockedMissions, setUnlockedMissions] = useState<number[]>([1]);
+  const [completedMissions, setCompletedMissions] = useState<number[]>([]);
+  const [activeMission, setActiveMission] = useState<Mission | null>(null);
+  
+  // Success Modal States
+  const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
+  const [successModalData, setSuccessModalData] = useState<{ id: number, title: string, xpReward: number } | null>(null);
+  
+  // Audio chime helpers
+  const playSound = (type: 'click' | 'success' | 'fail' | 'connect') => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      if (type === 'click') {
+        osc.frequency.setValueAtTime(600, ctx.currentTime);
+        gain.gain.setValueAtTime(0.05, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.1);
+      } else if (type === 'success') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.12); // E5
+        osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.24); // G5
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.4);
+      } else if (type === 'connect') {
+        osc.frequency.setValueAtTime(400, ctx.currentTime);
+        osc.frequency.setValueAtTime(800, ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+      } else if (type === 'fail') {
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.frequency.setValueAtTime(150, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      }
+    } catch (e) {
+      // AudioContext fails gracefully if browser blocks it
+    }
+  };
+
+  // Load progress from localStorage
+  useEffect(() => {
+    const savedXp = localStorage.getItem('gamejar_xp');
+    const savedCompleted = localStorage.getItem('gamejar_completed');
+    const savedUnlocked = localStorage.getItem('gamejar_unlocked');
+    if (savedXp) setXp(parseInt(savedXp));
+    if (savedCompleted) setCompletedMissions(JSON.parse(savedCompleted));
+    if (savedUnlocked) setUnlockedMissions(JSON.parse(savedUnlocked));
+  }, []);
+
+  const saveProgress = (newXp: number, newComp: number[], newUnl: number[]) => {
+    localStorage.setItem('gamejar_xp', newXp.toString());
+    localStorage.setItem('gamejar_completed', JSON.stringify(newComp));
+    localStorage.setItem('gamejar_unlocked', JSON.stringify(newUnl));
+  };
+
+  const level = Math.floor(xp / 1000) + 1;
+
+  // Simulator Network States
+  const [connections, setConnections] = useState<Array<{from: string, fromPort: string, to: string, toPort: string, type: 'utp' | 'console'}>>([]);
+  const [pc1Ip, setPc1Ip] = useState({ ip: '', mask: '', gw: '', dns: '', mode: 'static' as 'static' | 'dhcp' });
+  const [pc2Ip, setPc2Ip] = useState({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' as 'static' | 'dhcp' });
+  const [pc3Ip, setPc3Ip] = useState({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' as 'static' | 'dhcp' }); // IP conflict default
+  const [laptopIp, setLaptopIp] = useState({ ip: '192.168.1.5', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' as 'static' | 'dhcp' });
+  
+  // CLI States (Switch/Router Console)
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
+  const [currentCliTarget, setCurrentCliTarget] = useState<'switch' | 'router' | null>(null);
+  const [cliMode, setCliMode] = useState<'user' | 'priv' | 'conf' | 'interface' | 'dhcp' | 'vlan'>('user');
+  const [cliSubTarget, setCliSubTarget] = useState<string>(''); // For interfaces like fa0/3, gi0/0
+  const [cliInput, setCliInput] = useState('');
+  
+  // PC Interface overlays
+  const [openedPcId, setOpenedPcId] = useState<'pc1' | 'pc2' | 'pc3' | 'laptop' | null>(null);
+  const [pcTab, setPcTab] = useState<'config' | 'desktop' | 'web'>('config');
+  const [pcPromptLogs, setPcPromptLogs] = useState<{ [key: string]: string[] }>({
+    pc1: ['GAMEJar Client Console v1.0', 'Ketik "help" untuk melihat daftar perintah.', ''],
+    pc2: ['GAMEJar Client Console v1.0', 'Ketik "help" untuk melihat daftar perintah.', ''],
+    pc3: ['GAMEJar Client Console v1.0', 'Ketik "help" untuk melihat daftar perintah.', ''],
+    laptop: ['GAMEJar Client Console v1.0', 'Ketik "help" untuk melihat daftar perintah.', '']
+  });
+  const [pcPromptInput, setPcPromptInput] = useState('');
+  const [webBrowserUrl, setWebBrowserUrl] = useState('http://tkj-server.net');
+
+  // Switch Port mapping state
+  const [switchVlans, setSwitchVlans] = useState<{ [port: string]: number }>({
+    'Fa0/1': 1, 'Fa0/2': 1, 'Fa0/3': 1, 'Fa0/4': 1, 'Fa0/5': 1, 'Fa0/6': 1, 'Fa0/7': 1, 'Fa0/8': 1
+  });
+  const [switchCreatedVlans, setSwitchCreatedVlans] = useState<number[]>([1]);
+
+  // Router config state
+  const [routerDhcpPool, setRouterDhcpPool] = useState({ active: false, network: '', gateway: '' });
+  const [routerAcl, setRouterAcl] = useState<Array<{ type: 'deny' | 'permit', src: string, dst: string, port?: number }>>([]);
+  const [routerAclApplied, setRouterAclApplied] = useState<{ interface: string, direction: 'in' | 'out' } | null>(null);
+
+  // AI Assistant Chat state
+  const [aiChat, setAiChat] = useState<Array<{ sender: 'user' | 'assistant', text: string }>>([
+    { sender: 'assistant', text: 'Halo! Saya Instruktur Jar, pemandu praktikum jaringan komputer Anda. Ada yang bisa saya bantu terkait materi TKJ atau misi praktikum saat ini?' }
+  ]);
+  const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+
+  // Active Tool state
+  const [selectedTool, setSelectedTool] = useState<'utp' | 'console' | null>(null);
+  const [wireStartNode, setWireStartNode] = useState<{ device: string, port: string } | null>(null);
+
+  // Dynamic live metric counters
+  const [metrics, setMetrics] = useState({ traffic: 250, latency: 12, loss: 0 });
+
+  // References
+  const terminalBottomRef = useRef<HTMLDivElement>(null);
+  const pcPromptBottomRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom of terminal when logs update
+  useEffect(() => {
+    terminalBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [terminalLogs]);
+
+  useEffect(() => {
+    pcPromptBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [pcPromptLogs, openedPcId]);
+
+  const handleNextMission = () => {
+    if (!successModalData) return;
+    const nextId = successModalData.id + 1;
+    const nextMission = MISSIONS_DATA.find(m => m.id === nextId);
+    
+    setShowSuccessModal(false);
+    setSuccessModalData(null);
+    
+    if (nextMission) {
+      playSound('click');
+      setActiveMission(nextMission);
+      initializeMissionState(nextMission.id);
+      setCurrentScreen('game');
+    } else {
+      // Completed all missions! Go to lobby
+      playSound('success');
+      setCurrentScreen('lobby');
+      setActiveMission(null);
+    }
+  };
+
+  const initializeMissionState = (missionId: number) => {
+    // Clear old states
+    setConnections([]);
+    setCurrentCliTarget(null);
+    setCliMode('user');
+    setCliSubTarget('');
+    setCliInput('');
+    setOpenedPcId(null);
+    setSwitchVlans({
+      'Fa0/1': 1, 'Fa0/2': 1, 'Fa0/3': 1, 'Fa0/4': 1, 'Fa0/5': 1, 'Fa0/6': 1, 'Fa0/7': 1, 'Fa0/8': 1
+    });
+    setSwitchCreatedVlans([1]);
+    setRouterDhcpPool({ active: false, network: '', gateway: '' });
+    setRouterAcl([]);
+    setRouterAclApplied(null);
+
+    // Initial terminal logs
+    const initialLogs = [
+      `🚀 [SYSTEM] Memulai Simulasi Misi ${missionId}...`,
+      `⚙️ Menyiapkan perangkat laboratorium virtual...`,
+    ];
+
+    if (missionId === 1) {
+      setConnections([
+        { from: 'router', fromPort: 'Gi0/0', to: 'switch', toPort: 'Fa0/8', type: 'utp' },
+        { from: 'pc2', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/2', type: 'utp' },
+        { from: 'pc3', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/3', type: 'utp' }
+      ]);
+      setPc1Ip({ ip: '', mask: '', gw: '', dns: '', mode: 'static' });
+      setPc2Ip({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc3Ip({ ip: '192.168.1.11', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setLaptopIp({ ip: '192.168.1.5', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setTerminalLogs([
+        ...initialLogs,
+        `✅ Perangkat PC-2, PC-3, dan Router Utama berhasil dinyalakan dan dihubungkan ke Switch.`,
+        `👉 PC-1 belum memiliki koneksi kabel dan alamat IP. Hubungkan sekarang!`
+      ]);
+    } else if (missionId === 2) {
+      setConnections([
+        { from: 'router', fromPort: 'Gi0/0', to: 'switch', toPort: 'Fa0/8', type: 'utp' },
+        { from: 'pc1', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/1', type: 'utp' },
+        { from: 'pc2', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/2', type: 'utp' },
+        { from: 'pc3', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/3', type: 'utp' }
+      ]);
+      setPc1Ip({ ip: '192.168.1.2', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc2Ip({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc3Ip({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' }); // Conflict!
+      setLaptopIp({ ip: '192.168.1.5', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setTerminalLogs([
+        ...initialLogs,
+        `⚠️ DETEKSI ADANYA KONFLIK ALAMAT IP: PC-2 dan PC-3 menggunakan IP yang sama (192.168.1.10)!`,
+        `👉 Silakan ubah IP PC-3 menjadi 192.168.1.11 di Tab Konfigurasi IP untuk menyelesaikan konflik.`
+      ]);
+    } else if (missionId === 3) {
+      setConnections([
+        { from: 'router', fromPort: 'Gi0/0', to: 'switch', toPort: 'Fa0/8', type: 'utp' },
+        { from: 'pc1', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/1', type: 'utp' },
+        { from: 'pc2', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/2', type: 'utp' },
+        { from: 'pc3', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/3', type: 'utp' }
+      ]);
+      setPc1Ip({ ip: '192.168.1.2', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc2Ip({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc3Ip({ ip: '192.168.1.11', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setLaptopIp({ ip: '192.168.1.5', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setTerminalLogs([
+        ...initialLogs,
+        `🔌 Seluruh PC Klien sudah terhubung ke Switch.`,
+        `👉 Hubungkan kabel Console hitam dari Laptop Admin (RS232) ke Switch (Console) terlebih dahulu untuk mengonfigurasi VLAN.`
+      ]);
+    } else if (missionId === 4) {
+      setConnections([
+        { from: 'router', fromPort: 'Gi0/0', to: 'switch', toPort: 'Fa0/8', type: 'utp' },
+        { from: 'pc1', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/1', type: 'utp' },
+        { from: 'pc2', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/2', type: 'utp' },
+        { from: 'pc3', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/3', type: 'utp' }
+      ]);
+      setPc1Ip({ ip: '', mask: '', gw: '', dns: '', mode: 'static' });
+      setPc2Ip({ ip: '', mask: '', gw: '', dns: '', mode: 'static' });
+      setPc3Ip({ ip: '192.168.1.11', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setLaptopIp({ ip: '192.168.1.5', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setTerminalLogs([
+        ...initialLogs,
+        `💻 Perangkat PC-1 dan PC-2 belum terkonfigurasi IP Addressnya (0.0.0.0).`,
+        `👉 Konfigurasikan DHCP Pool di Router Utama via CLI, lalu ubah mode IP PC-1 dan PC-2 ke DHCP.`
+      ]);
+    } else if (missionId === 5) {
+      setConnections([
+        { from: 'router', fromPort: 'Gi0/0', to: 'switch', toPort: 'Fa0/8', type: 'utp' },
+        { from: 'pc1', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/1', type: 'utp' },
+        { from: 'pc2', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/2', type: 'utp' },
+        { from: 'pc3', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/3', type: 'utp' }
+      ]);
+      setPc1Ip({ ip: '192.168.1.2', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc2Ip({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc3Ip({ ip: '192.168.1.11', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setLaptopIp({ ip: '192.168.1.5', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setTerminalLogs([
+        ...initialLogs,
+        `🚨 PERINGATAN KEAMANAN: Terdeteksi upaya brute-force SSH (Port 22) dari IP luar 10.10.10.50!`,
+        `👉 Konfigurasikan aturan Access Control List (ACL) nomor 101 pada Router Utama untuk memblokirnya.`
+      ]);
+    }
+  };
+
+  // Handle active DHCP changes for PCs
+  useEffect(() => {
+    if (activeMission?.id === 4 && routerDhcpPool.active) {
+      if (pc1Ip.mode === 'dhcp') {
+        setPc1Ip({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'dhcp' });
+      }
+      if (pc2Ip.mode === 'dhcp') {
+        setPc2Ip({ ip: '192.168.1.12', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'dhcp' });
+      }
+    }
+  }, [pc1Ip.mode, pc2Ip.mode, routerDhcpPool]);
+
+  // Live performance metric changes simulation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMetrics(prev => {
+        const isConflict = pc2Ip.ip === pc3Ip.ip && pc2Ip.ip !== '';
+        const isM5Blocked = routerAclApplied?.interface === 'Gi0/0' && routerAcl.some(a => a.type === 'deny' && a.port === 22);
+        
+        return {
+          traffic: Math.floor(Math.random() * 200) + (isConflict ? 10 : 350),
+          latency: isConflict ? Math.floor(Math.random() * 400) + 120 : Math.floor(Math.random() * 8) + 10,
+          loss: isConflict ? parseFloat((Math.random() * 5 + 4).toFixed(2)) : (isM5Blocked ? 0.05 : 0)
+        };
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [pc2Ip.ip, pc3Ip.ip, routerAclApplied, routerAcl]);
+
+  // ============================================================================
+  // MISSION PROGRESS VALIDATOR ENGINE
+  // ============================================================================
+  useEffect(() => {
+    if (!activeMission) return;
+
+    let updatedObjectives = activeMission.objectives.map(o => ({ ...o }));
+    let stateChanged = false;
+
+    // Mission 1: Konektivitas Dasar
+    if (activeMission.id === 1) {
+      // Obj 1: PC-1 to Switch port Fa0/1 UTP
+      const hasCable = connections.some(c => 
+        ((c.from === 'pc1' && c.to === 'switch' && c.toPort === 'Fa0/1') || 
+         (c.to === 'pc1' && c.from === 'switch' && c.fromPort === 'Fa0/1')) && c.type === 'utp'
+      );
+      if (hasCable !== updatedObjectives[0].completed) {
+        updatedObjectives[0].completed = hasCable;
+        stateChanged = true;
+      }
+
+      // Obj 2: Config IP PC-1
+      const isIpSet = pc1Ip.ip === '192.168.1.2' && pc1Ip.mask === '255.255.255.0' && pc1Ip.gw === '192.168.1.1';
+      if (isIpSet !== updatedObjectives[1].completed) {
+        updatedObjectives[1].completed = isIpSet;
+        stateChanged = true;
+      }
+
+      // Obj 3 will be set completed upon successful typing of ping in command prompt
+    }
+
+    // Mission 2: IP Conflict
+    if (activeMission.id === 2) {
+      // Obj 1: Change PC-3 IP to 192.168.1.11
+      const isIpCorrect = pc3Ip.ip === '192.168.1.11';
+      if (isIpCorrect !== updatedObjectives[0].completed) {
+        updatedObjectives[0].completed = isIpCorrect;
+        stateChanged = true;
+      }
+
+      // Obj 2 verified when ping 192.168.1.1 is run on PC-3
+    }
+
+    // Mission 3: VLAN Segregation
+    if (activeMission.id === 3) {
+      // Obj 1: Console cable from laptop to switch
+      const hasConsole = connections.some(c => 
+        ((c.from === 'laptop' && c.fromPort === 'RS232' && c.to === 'switch' && c.toPort === 'Console') ||
+         (c.to === 'laptop' && c.toPort === 'RS232' && c.from === 'switch' && c.fromPort === 'Console')) && c.type === 'console'
+      );
+      if (hasConsole !== updatedObjectives[0].completed) {
+        updatedObjectives[0].completed = hasConsole;
+        stateChanged = true;
+      }
+
+      // Obj 2: Created VLAN 10 & 20
+      const hasVlans = switchCreatedVlans.includes(10) && switchCreatedVlans.includes(20);
+      if (hasVlans !== updatedObjectives[1].completed) {
+        updatedObjectives[1].completed = hasVlans;
+        stateChanged = true;
+      }
+
+      // Obj 3: Alokasikan Port
+      const isPortsAssigned = switchVlans['Fa0/1'] === 10 && switchVlans['Fa0/2'] === 10 &&
+                               switchVlans['Fa0/3'] === 20 && switchVlans['Fa0/4'] === 20;
+      if (isPortsAssigned !== updatedObjectives[2].completed) {
+        updatedObjectives[2].completed = isPortsAssigned;
+        stateChanged = true;
+      }
+    }
+
+    // Mission 4: DHCP Server Otomatis
+    if (activeMission.id === 4) {
+      // Obj 1: Router configured pool
+      const isDhcpActive = routerDhcpPool.active && routerDhcpPool.network === '192.168.1.0' && routerDhcpPool.gateway === '192.168.1.1';
+      if (isDhcpActive !== updatedObjectives[0].completed) {
+        updatedObjectives[0].completed = isDhcpActive;
+        stateChanged = true;
+      }
+
+      // Obj 2: PC-1 mode DHCP
+      const pc1DhcpMode = pc1Ip.mode === 'dhcp';
+      if (pc1DhcpMode !== updatedObjectives[1].completed) {
+        updatedObjectives[1].completed = pc1DhcpMode;
+        stateChanged = true;
+      }
+
+      // Obj 3: PC-2 mode DHCP
+      const pc2DhcpMode = pc2Ip.mode === 'dhcp';
+      if (pc2DhcpMode !== updatedObjectives[2].completed) {
+        updatedObjectives[2].completed = pc2DhcpMode;
+        stateChanged = true;
+      }
+    }
+
+    // Mission 5: Security ACL
+    if (activeMission.id === 5) {
+      // Obj 1: Deny rule
+      const hasDeny = routerAcl.some(a => a.type === 'deny' && a.src === '10.10.10.50' && a.port === 22);
+      if (hasDeny !== updatedObjectives[0].completed) {
+        updatedObjectives[0].completed = hasDeny;
+        stateChanged = true;
+      }
+
+      // Obj 2: Permit all rule
+      const hasPermit = routerAcl.some(a => a.type === 'permit' && a.src === 'any' && a.dst === 'any');
+      if (hasPermit !== updatedObjectives[1].completed) {
+        updatedObjectives[1].completed = hasPermit;
+        stateChanged = true;
+      }
+
+      // Obj 3: Apply ACL 101 to Gi0/0 in
+      const isApplied = routerAclApplied?.interface === 'Gi0/0' && routerAclApplied?.direction === 'in';
+      if (isApplied !== updatedObjectives[2].completed) {
+        updatedObjectives[2].completed = isApplied;
+        stateChanged = true;
+      }
+    }
+
+    if (stateChanged) {
+      setActiveMission(prev => {
+        if (!prev || prev.id !== activeMission.id) return prev;
+        const merged = prev.objectives.map((obj, i) => {
+          // If this objective is managed by the validator for this mission, update it.
+          // Otherwise, preserve its current state in prev.
+          let shouldUpdate = false;
+          if (prev.id === 1 && (i === 0 || i === 1)) shouldUpdate = true;
+          if (prev.id === 2 && i === 0) shouldUpdate = true;
+          if (prev.id === 3) shouldUpdate = true;
+          if (prev.id === 4) shouldUpdate = true;
+          if (prev.id === 5) shouldUpdate = true;
+
+          return {
+            ...obj,
+            completed: shouldUpdate ? updatedObjectives[i].completed : obj.completed
+          };
+        });
+        return { ...prev, objectives: merged };
+      });
+    }
+  }, [connections, pc1Ip, pc2Ip, pc3Ip, switchVlans, switchCreatedVlans, routerDhcpPool, routerAcl, routerAclApplied, activeMission]);
+
+  // ============================================================================
+  // MISSION ACCOMPLISHED DETECTOR
+  // ============================================================================
+  useEffect(() => {
+    if (!activeMission) return;
+
+    const allCompleted = activeMission.objectives.every(o => o.completed);
+    if (allCompleted && !completedMissions.includes(activeMission.id)) {
+      playSound('success');
+      const nextXp = xp + activeMission.xpReward;
+      setXp(nextXp);
+
+      const nextCompleted = [...completedMissions];
+      if (!nextCompleted.includes(activeMission.id)) {
+        nextCompleted.push(activeMission.id);
+      }
+      setCompletedMissions(nextCompleted);
+
+      const nextUnlocked = [...unlockedMissions];
+      const nextId = activeMission.id + 1;
+      if (nextId <= MISSIONS_DATA.length && !nextUnlocked.includes(nextId)) {
+        nextUnlocked.push(nextId);
+      }
+      setUnlockedMissions(nextUnlocked);
+      saveProgress(nextXp, nextCompleted, nextUnlocked);
+
+      // Notify client in terminal
+      setTerminalLogs(prev => [
+        ...prev,
+        `\n🏆 [MISI SELESAI] Selamat! Anda berhasil menyelesaikan ${activeMission.title}!`,
+        `✨ Hadiah XP: +${activeMission.xpReward} XP. Total XP Anda sekarang: ${nextXp} XP.`
+      ]);
+
+      // Open Success Modal
+      setSuccessModalData({
+        id: activeMission.id,
+        title: activeMission.title,
+        xpReward: activeMission.xpReward
+      });
+      setShowSuccessModal(true);
+    }
+  }, [activeMission, completedMissions, xp, unlockedMissions]);
+
+  // ============================================================================
+  // INTERACTIVE CABLING ENGINE
+  // ============================================================================
+  const handlePortClick = (device: string, port: string) => {
+    playSound('click');
+    if (!selectedTool) return;
+
+    if (!wireStartNode) {
+      // Start connection
+      setWireStartNode({ device, port });
+      setTerminalLogs(prev => [...prev, `⚡ [CABLING] Menarik ujung kabel ${selectedTool.toUpperCase()} dari ${device.toUpperCase()} (${port}). Klik port tujuan...`]);
+    } else {
+      // Prevent connecting to same device
+      if (wireStartNode.device === device) {
+        setWireStartNode(null);
+        setSelectedTool(null);
+        playSound('fail');
+        setTerminalLogs(prev => [...prev, `❌ [CABLING] Batal. Tidak bisa menghubungkan ke port pada perangkat yang sama.`]);
+        return;
+      }
+
+      // Complete connection
+      const newConnection = {
+        from: wireStartNode.device,
+        fromPort: wireStartNode.port,
+        to: device,
+        toPort: port,
+        type: selectedTool
+      };
+
+      setConnections(prev => [...prev, newConnection]);
+      playSound('connect');
+      setTerminalLogs(prev => [...prev, `✅ [CABLING] Terhubung: ${wireStartNode.device.toUpperCase()} [${wireStartNode.port}] ───[${selectedTool.toUpperCase()}]───> ${device.toUpperCase()} [${port}]`]);
+      setWireStartNode(null);
+      setSelectedTool(null);
+    }
+  };
+
+  const removeConnection = (index: number) => {
+    playSound('fail');
+    const removed = connections[index];
+    setConnections(prev => prev.filter((_, i) => i !== index));
+    setTerminalLogs(prev => [...prev, `🗑️ [CABLING] Kabel dilepas dari ${removed.from.toUpperCase()} [${removed.fromPort}] <---> ${removed.to.toUpperCase()} [${removed.toPort}]`]);
+  };
+
+  // ============================================================================
+  // CISCO IOS CLI PARSER ENGINE (Switch & Router)
+  // ============================================================================
+  const handleCliSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cliInput.trim()) return;
+
+    const cmd = cliInput.trim();
+    const cmdLower = cmd.toLowerCase();
+    setCliInput('');
+
+    // Print command entered
+    const promptChar = cliMode === 'user' ? '>' : '#';
+    let promptPrefix = currentCliTarget === 'switch' ? 'Switch' : 'Router';
+    if (cliMode === 'conf') promptPrefix += '(config)';
+    else if (cliMode === 'interface') promptPrefix += `(config-if)`;
+    else if (cliMode === 'dhcp') promptPrefix += `(config-dhcp)`;
+    else if (cliMode === 'vlan') promptPrefix += `(config-vlan)`;
+
+    const echoLine = `${promptPrefix}${promptChar} ${cmd}`;
+    let output: string[] = [echoLine];
+
+    // Parser implementation
+    if (cmdLower === 'enable' || cmdLower === 'ena') {
+      if (cliMode === 'user') {
+        setCliMode('priv');
+        output.push(`[SYSTEM] Privileged EXEC mode activated.`);
+      } else {
+        output.push(`% Mode already enabled.`);
+      }
+    } else if (cmdLower === 'exit') {
+      if (cliMode === 'vlan' || cliMode === 'interface' || cliMode === 'dhcp') {
+        setCliMode('conf');
+      } else if (cliMode === 'conf') {
+        setCliMode('priv');
+      } else if (cliMode === 'priv') {
+        setCliMode('user');
+      } else {
+        output.push(`% Terminal connection ended.`);
+      }
+    } else if (cmdLower === 'configure terminal' || cmdLower === 'conf t') {
+      if (cliMode === 'priv') {
+        setCliMode('conf');
+        output.push(`Enter configuration commands, one per line. End with CNTL/Z.`);
+      } else {
+        output.push(`% Must be in privileged mode first. Type 'enable'.`);
+      }
+    } else if (cmdLower.startsWith('interface ') || cmdLower.startsWith('int ')) {
+      if (cliMode === 'conf') {
+        const portStr = cmdLower.split(' ').pop() || '';
+        if (currentCliTarget === 'switch') {
+          // Switch port FastEthernet0/1 etc
+          setCliMode('interface');
+          setCliSubTarget(portStr);
+          output.push(`Entering configuration mode for Switch interface ${portStr}.`);
+        } else {
+          // Router port GigabitEthernet0/0 etc
+          setCliMode('interface');
+          setCliSubTarget(portStr);
+          output.push(`Entering configuration mode for Router interface ${portStr}.`);
+        }
+      } else {
+        output.push(`% Command rejected. Configure mode required.`);
+      }
+    } else if (cmdLower.startsWith('vlan ')) {
+      if (cliMode === 'conf' && currentCliTarget === 'switch') {
+        const vlanId = parseInt(cmdLower.split(' ').pop() || '1');
+        if (!isNaN(vlanId)) {
+          setCliMode('vlan');
+          setCliSubTarget(vlanId.toString());
+          if (!switchCreatedVlans.includes(vlanId)) {
+            setSwitchCreatedVlans(prev => [...prev, vlanId]);
+          }
+          output.push(`VLAN ${vlanId} created / selected.`);
+        }
+      } else {
+        output.push(`% Command invalid or not in Config mode on Switch.`);
+      }
+    } else if (cmdLower.startsWith('switchport access vlan ')) {
+      if (cliMode === 'interface' && currentCliTarget === 'switch') {
+        const vlanId = parseInt(cmdLower.split(' ').pop() || '1');
+        if (!isNaN(vlanId)) {
+          // Find standard format port
+          const formattedPort = cliSubTarget.includes('/') 
+            ? cliSubTarget.split('/').pop()?.toUpperCase() 
+            : cliSubTarget.toUpperCase();
+          const targetPortKey = `Fa0/${formattedPort || '1'}`;
+          
+          setSwitchVlans(prev => ({ ...prev, [targetPortKey]: vlanId }));
+          output.push(`Interface ${cliSubTarget} assigned to VLAN ${vlanId}.`);
+        }
+      } else {
+        output.push(`% Command rejected. Must be in interface configuration mode.`);
+      }
+    } else if (cmdLower.startsWith('ip dhcp pool ')) {
+      if (cliMode === 'conf' && currentCliTarget === 'router') {
+        const poolName = cmd.split(' ').pop() || 'POOL';
+        setCliMode('dhcp');
+        setCliSubTarget(poolName);
+        setRouterDhcpPool(prev => ({ ...prev, active: true }));
+        output.push(`DHCP Pool "${poolName}" initialized.`);
+      } else {
+        output.push(`% Command invalid or not in config mode on Router.`);
+      }
+    } else if (cmdLower.startsWith('network ')) {
+      if (cliMode === 'dhcp' && currentCliTarget === 'router') {
+        const parts = cmd.split(' ');
+        const net = parts[1];
+        setRouterDhcpPool(prev => ({ ...prev, network: net }));
+        output.push(`DHCP network set to: ${net}`);
+      } else {
+        output.push(`% Command rejected. DHCP Config mode required.`);
+      }
+    } else if (cmdLower.startsWith('default-router ')) {
+      if (cliMode === 'dhcp' && currentCliTarget === 'router') {
+        const gw = cmd.split(' ').pop() || '';
+        setRouterDhcpPool(prev => ({ ...prev, gateway: gw }));
+        output.push(`DHCP default router set to: ${gw}`);
+      } else {
+        output.push(`% Command rejected. DHCP Config mode required.`);
+      }
+    } else if (cmdLower.startsWith('access-list ')) {
+      if (cliMode === 'conf' && currentCliTarget === 'router') {
+        // Simple ACL parser for Mission 5:
+        // "access-list 101 deny tcp host 10.10.10.50 host 192.168.1.100 eq 22"
+        if (cmdLower.includes('deny') && cmdLower.includes('22')) {
+          setRouterAcl(prev => [...prev, { type: 'deny', src: '10.10.10.50', dst: '192.168.1.100', port: 22 }]);
+          output.push(`Router ACL Rule: Deny TCP from 10.10.10.50 to 192.168.1.100 Port 22 (SSH) added.`);
+        } else if (cmdLower.includes('permit') && cmdLower.includes('any')) {
+          setRouterAcl(prev => [...prev, { type: 'permit', src: 'any', dst: 'any' }]);
+          output.push(`Router ACL Rule: Permit IP any any added.`);
+        } else {
+          output.push(`Router Access-list parsed but unsupported in simulation rules.`);
+        }
+      } else {
+        output.push(`% Command rejected. Must be in config mode.`);
+      }
+    } else if (cmdLower.startsWith('ip access-group ')) {
+      if (cliMode === 'interface' && currentCliTarget === 'router') {
+        const parts = cmdLower.split(' ');
+        const aclNum = parts[2];
+        const dir = parts[3] as 'in' | 'out';
+        setRouterAclApplied({ interface: cliSubTarget, direction: dir });
+        output.push(`Applied Access-list ${aclNum} (${dir}) on interface ${cliSubTarget}.`);
+      } else {
+        output.push(`% Command rejected. Must be in interface mode.`);
+      }
+    } else if (cmdLower === 'show vlan' || cmdLower === 'show vlan brief') {
+      if (currentCliTarget === 'switch') {
+        output.push(`
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Fa0/5, Fa0/6, Fa0/7, Fa0/8
+10   HR                               active    ${switchVlans['Fa0/1'] === 10 ? 'Fa0/1, ' : ''}${switchVlans['Fa0/2'] === 10 ? 'Fa0/2' : ''}
+20   Finance                          active    ${switchVlans['Fa0/3'] === 20 ? 'Fa0/3, ' : ''}${switchVlans['Fa0/4'] === 20 ? 'Fa0/4' : ''}
+`);
+      } else {
+        output.push(`% Invalid command on Router.`);
+      }
+    } else if (cmdLower === 'show running-config' || cmdLower === 'show run') {
+      if (currentCliTarget === 'switch') {
+        output.push(`
+! Current Switch configuration:
+vlan 10
+ name HR
+vlan 20
+ name Finance
+!
+interface FastEthernet0/1
+ switchport access vlan ${switchVlans['Fa0/1']}
+!
+interface FastEthernet0/2
+ switchport access vlan ${switchVlans['Fa0/2']}
+!
+interface FastEthernet0/3
+ switchport access vlan ${switchVlans['Fa0/3']}
+!
+interface FastEthernet0/4
+ switchport access vlan ${switchVlans['Fa0/4']}
+`);
+      } else {
+        output.push(`
+! Current Router configuration:
+ip dhcp pool LAB-TKJ
+ network ${routerDhcpPool.network || 'None'} 255.255.255.0
+ default-router ${routerDhcpPool.gateway || 'None'}
+!
+interface GigabitEthernet0/0
+ ip address 192.168.1.1 255.255.255.0
+ ${routerAclApplied?.interface === 'Gi0/0' ? `ip access-group 101 ${routerAclApplied.direction}` : ''}
+!
+access-list 101 deny tcp host 10.10.10.50 host 192.168.1.100 eq 22
+access-list 101 permit ip any any
+`);
+      }
+    } else if (cmdLower === 'help' || cmdLower === '?') {
+      output.push(`Available commands in this mode:`);
+      output.push(`- help / ? : Tampilkan bantuan`);
+      if (cliMode === 'user') output.push(`- enable / ena : Masuk ke privileged mode`);
+      if (cliMode === 'priv') output.push(`- configure terminal / conf t : Masuk ke config mode\n- show running-config / show run : Tampilkan config`);
+      if (cliMode === 'conf') {
+        if (currentCliTarget === 'switch') {
+          output.push(`- vlan <vlan-id> : Buat/masuk ke VLAN\n- interface <interface-id> (e.g. fa0/1) : Konfigurasi port`);
+        } else {
+          output.push(`- ip dhcp pool <nama> : Buat DHCP pool\n- interface <interface-id> (e.g. gi0/0) : Konfigurasi interface\n- access-list <101> deny/permit ... : Buat filter firewall`);
+        }
+      }
+      if (cliMode === 'interface' && currentCliTarget === 'switch') output.push(`- switchport access vlan <id> : Alokasikan port ke VLAN`);
+      if (cliMode === 'interface' && currentCliTarget === 'router') output.push(`- ip access-group <acl> <in/out> : Terapkan firewall ke interface`);
+      if (cliMode === 'dhcp') output.push(`- network <ip> <subnet-mask> : Atur network DHCP\n- default-router <ip> : Atur Gateway DHCP`);
+      output.push(`- exit : Kembali ke mode sebelumnya`);
+    } else {
+      output.push(`% Unknown command or incomplete parameters. Type 'help' to check.`);
+    }
+
+    setTerminalLogs(prev => [...prev, ...output]);
+  };
+
+  // ============================================================================
+  // PC DESKTOP TERMINAL/IP-CONFIG ENGINES
+  // ============================================================================
+  const handlePcPromptSubmit = (e: React.FormEvent, pcId: 'pc1' | 'pc2' | 'pc3' | 'laptop') => {
+    e.preventDefault();
+    if (!pcPromptInput.trim()) return;
+
+    const cmd = pcPromptInput.trim();
+    const cmdLower = cmd.toLowerCase();
+    setPcPromptInput('');
+
+    let promptLine = `C:\\Network\\Siswa> ${cmd}`;
+    let output: string[] = [promptLine];
+
+    // State bindings
+    let currentIp = pcId === 'pc1' ? pc1Ip : pcId === 'pc2' ? pc2Ip : pcId === 'pc3' ? pc3Ip : laptopIp;
+
+    if (cmdLower === 'ipconfig') {
+      output.push(`
+IP Configuration:
+   Ethernet Adapter local-lan:
+      Connection-specific DNS Suffix : tkj.net
+      IPv4 Address. . . . . . . . . . : ${currentIp.mode === 'dhcp' ? '192.168.1.10 (DHCP)' : currentIp.ip || '0.0.0.0'}
+      Subnet Mask . . . . . . . . . . : ${currentIp.mask || '0.0.0.0'}
+      Default Gateway . . . . . . . . : ${currentIp.gw || '0.0.0.0'}
+      DNS Server. . . . . . . . . . . : ${currentIp.dns || '0.0.0.0'}
+`);
+    } else if (cmdLower.startsWith('ping ')) {
+      const target = cmd.split(' ').pop() || '';
+      output.push(`Pinging ${target} with 32 bytes of data:`);
+      
+      const isConnected = connections.some(c => c.from === pcId || c.to === pcId);
+      const isConflict = pc2Ip.ip === pc3Ip.ip && (pcId === 'pc2' || pcId === 'pc3');
+
+      setTimeout(() => {
+        if (!isConnected) {
+          setPcPromptLogs(prev => ({
+            ...prev,
+            [pcId]: [...prev[pcId], 'Request timed out.', 'Request timed out.', 'Request timed out.', 'Ping statistics: 3 sent, 0 received, 3 lost (100% loss).']
+          }));
+          return;
+        }
+
+        if (isConflict) {
+          setPcPromptLogs(prev => ({
+            ...prev,
+            [pcId]: [...prev[pcId], 'Reply from ' + target + ': Destination Host Unreachable (ARP conflict).', 'Request timed out.', 'Reply from ' + target + ': Bytes=32 Time=350ms TTL=64', 'Ping statistics: 3 sent, 1 received, 2 lost (66% loss).']
+          }));
+          return;
+        }
+
+        // Target validation
+        if (target === '192.168.1.1') { // Router gateway
+          if (pcId === 'pc1' && !pc1Ip.ip) {
+            setPcPromptLogs(prev => ({ ...prev, [pcId]: [...prev[pcId], 'Request timed out. No IP configured.'] }));
+          } else {
+            setPcPromptLogs(prev => ({
+              ...prev,
+              [pcId]: [...prev[pcId], 'Reply from 192.168.1.1: Bytes=32 Time=14ms TTL=64', 'Reply from 192.168.1.1: Bytes=32 Time=12ms TTL=64', 'Reply from 192.168.1.1: Bytes=32 Time=15ms TTL=64', 'Ping statistics: 3 sent, 3 received, 0 lost (0% loss).']
+            }));
+            // Trigger Mission progress
+            setActiveMission(prev => {
+              if (prev?.id === 1 && pcId === 'pc1' && pc1Ip.ip === '192.168.1.2') {
+                const updated = prev.objectives.map(o => ({ ...o }));
+                updated[2].completed = true;
+                return { ...prev, objectives: updated };
+              }
+              if (prev?.id === 2 && pcId === 'pc3' && pc3Ip.ip === '192.168.1.11') {
+                const updated = prev.objectives.map(o => ({ ...o }));
+                updated[1].completed = true;
+                return { ...prev, objectives: updated };
+              }
+              return prev;
+            });
+          }
+        } else if (target === '192.168.1.100' || target === 'tkj-server.net') {
+          // Check firewall blocks for Mission 5 (Deny SSH port 22 vs permit other)
+          output.push('Reply from 192.168.1.100: Bytes=32 Time=25ms TTL=63');
+          output.push('Reply from 192.168.1.100: Bytes=32 Time=24ms TTL=63');
+          output.push('Ping statistics: 2 sent, 2 received, 0 lost (0% loss).');
+        } else {
+          output.push('Reply from ' + target + ': Bytes=32 Time=45ms TTL=54');
+          output.push('Reply from ' + target + ': Bytes=32 Time=42ms TTL=54');
+        }
+      }, 500);
+
+    } else if (cmdLower === 'help') {
+      output.push(`Daftar perintah yang didukung:`);
+      output.push(`- ipconfig : Tampilkan detail alamat IP perangkat`);
+      output.push(`- ping <ip-target> : Kirim ICMP echo request ke target`);
+      output.push(`- help : Tampilkan menu bantuan ini`);
+    } else {
+      output.push(` Perintah tidak dikenal. Ketik "help".`);
+    }
+
+    setPcPromptLogs(prev => ({
+      ...prev,
+      [pcId]: [...prev[pcId], ...output]
+    }));
+  };
+
+  // ============================================================================
+  // AI INSTRUCTOR JAR (GEMINI SERVER INTEGRATION)
+  // ============================================================================
+  const handleAiChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiInput.trim()) return;
+
+    const userMsg = aiInput.trim();
+    setAiInput('');
+    setAiChat(prev => [...prev, { sender: 'user', text: userMsg }]);
+    setAiLoading(true);
+
+    try {
+      const response = await fetch('/api/instructor-help', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: userMsg,
+          currentMission: activeMission,
+          chatHistory: aiChat.slice(-6) // Send last 6 messages to keep context
+        })
+      });
+      const data = await response.json();
+      setAiChat(prev => [...prev, { sender: 'assistant', text: data.reply || 'Maaf, saya sedang mengalami kendala jaringan bimbingan.' }]);
+    } catch (err) {
+      // Local fallback in case server/API key is down
+      let fallbackText = 'Maaf, server instruktur sedang offline.';
+      if (activeMission?.id === 1) {
+        fallbackText = 'Untuk Misi 1, Anda perlu menyambungkan kabel UTP dulu dari PC-1 ke Switch Port Fa0/1, lalu atur IP PC-1 secara statis ke 192.168.1.2 di tab Config IP, dan lakukan ping ke Gateway 192.168.1.1.';
+      } else if (activeMission?.id === 3) {
+        fallbackText = 'Untuk Misi 3, sambungkan kabel Console hitam dari Laptop ke Port Console Switch. Masuk ke terminal laptop, lalu ketik "enable", "configure terminal". Gunakan perintah "vlan 10", "name HR" lalu assign interface range fa0/1 - 2 ke VLAN tersebut.';
+      }
+      setAiChat(prev => [...prev, { sender: 'assistant', text: `[OFFLINE MODE] ${fallbackText}` }]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  return (
+    <div id="gamejar_root" className="w-full h-full text-[#d1d5db] font-sans flex flex-col overflow-hidden select-none bg-[#0c0d0f]">
+      
+      {/* HEADER SECTION */}
+      <header className="h-14 border-b border-white/10 bg-[#15171b] flex items-center justify-between px-6 shrink-0 z-10">
+        <div className="flex items-center gap-4">
+          <div className="w-8 h-8 bg-[#22c55e] rounded flex items-center justify-center text-black font-extrabold text-sm shadow-md shadow-green-500/20">GJ</div>
+          <h1 className="text-lg font-extrabold tracking-tight text-white flex items-center">
+            GAME<span className="text-[#22c55e]">Jar</span>
+            <span className="text-[10px] font-mono font-normal opacity-50 uppercase tracking-widest ml-3 border-l border-white/10 pl-3">SMK TKJ Lab v1.1.2</span>
+          </h1>
+        </div>
+        
+        {/* Navigation & Score HUD */}
+        <div className="flex items-center gap-8">
+          <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+            <button 
+              onClick={() => { playSound('click'); setCurrentScreen('lobby'); }}
+              className={`text-xs px-3 py-1 rounded transition-colors ${currentScreen === 'lobby' ? 'bg-[#22c55e] text-black font-bold' : 'text-slate-400 hover:text-white'}`}
+            >
+              Lobby
+            </button>
+            <button 
+              onClick={() => { playSound('click'); if (unlockedMissions.length > 0 && !activeMission) setActiveMission(MISSIONS_DATA[0]); setCurrentScreen('game'); }}
+              className={`text-xs px-3 py-1 rounded transition-colors ${currentScreen === 'game' ? 'bg-[#22c55e] text-black font-bold' : 'text-slate-400 hover:text-white'}`}
+            >
+              Lab Simulasi
+            </button>
+            <button 
+              onClick={() => { playSound('click'); setCurrentScreen('handbook'); }}
+              className={`text-xs px-3 py-1 rounded transition-colors ${currentScreen === 'handbook' ? 'bg-[#22c55e] text-black font-bold' : 'text-slate-400 hover:text-white'}`}
+            >
+              Buku Panduan
+            </button>
+          </div>
+
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] uppercase tracking-widest opacity-50">Total XP</span>
+            <span className="mono text-[#22c55e] font-bold text-xs">{xp.toLocaleString()} / {(level * 1000).toLocaleString()} XP</span>
+          </div>
+          
+          <div className="h-8 w-px bg-white/10"></div>
+          
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs font-bold text-white">Siswa_TKJ_Spesialis</p>
+              <p className="text-[9px] text-[#22c55e] mono">Level {level} Network Administrator</p>
+            </div>
+            <div className="w-9 h-9 rounded-full bg-slate-800 border border-white/20 flex items-center justify-center font-bold text-white text-xs">
+              TKJ
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* SCREEN ROUTER */}
+      {currentScreen === 'lobby' && (
+        <div className="flex-1 overflow-y-auto grid-bg p-8 flex flex-col items-center">
+          <div className="max-w-4xl w-full text-center mb-8 flex flex-col items-center">
+            <h2 className="text-4xl font-extrabold text-white tracking-tight mb-2">Pilih Misi Praktikum Jaringan</h2>
+            <p className="text-slate-400 text-sm mb-4">Selesaikan simulasi laboratorium TKJ untuk naik level, kumpulkan XP, dan jadilah Ahli Infrastruktur Jaringan SMK!</p>
+            <button 
+              onClick={() => {
+                playSound('success');
+                setUnlockedMissions([1, 2, 3, 4, 5]);
+              }}
+              className="px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 text-xs font-mono font-bold rounded-lg transition-all flex items-center gap-2 shadow-lg shadow-yellow-500/5 cursor-pointer"
+            >
+              🔓 Developer Mode: Buka Semua Misi
+            </button>
+          </div>
+
+          {/* Lobby Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+            {MISSIONS_DATA.map((mission) => {
+              const isUnlocked = unlockedMissions.includes(mission.id);
+              const isCompleted = completedMissions.includes(mission.id);
+
+              return (
+                <div 
+                  key={mission.id}
+                  className={`p-5 rounded-xl border transition-all ${
+                    isUnlocked 
+                      ? 'bg-[#15171b] border-white/10 hover:border-[#22c55e]/50 cursor-pointer hover:shadow-xl hover:shadow-[#22c55e]/5' 
+                      : 'bg-black/30 border-white/5 opacity-50 pointer-events-none'
+                  }`}
+                  onClick={() => {
+                    if (isUnlocked) {
+                      playSound('click');
+                      setActiveMission(mission);
+                      setCurrentScreen('game');
+                      initializeMissionState(mission.id);
+                    }
+                  }}
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <span className="text-[10px] mono bg-[#22c55e]/10 text-[#22c55e] px-2 py-0.5 rounded font-bold">{mission.code}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                        mission.difficulty === 'Mudah' ? 'bg-green-500/10 text-green-400' :
+                        mission.difficulty === 'Sedang' ? 'bg-yellow-500/10 text-yellow-400' :
+                        'bg-red-500/10 text-red-400'
+                      }`}>{mission.difficulty}</span>
+                      {isCompleted && (
+                        <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded font-bold flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3" /> SELESAI
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <h3 className="text-lg font-bold text-white mb-1">{mission.title}</h3>
+                  <p className="text-[11px] text-slate-500 mb-4 font-mono uppercase tracking-widest">{mission.subtitle}</p>
+                  <p className="text-xs text-slate-400 line-clamp-3 mb-4 leading-relaxed">{mission.description}</p>
+
+                  <div className="flex justify-between items-center pt-3 border-t border-white/5 mt-auto">
+                    <div className="text-left">
+                      <p className="text-[9px] opacity-40 uppercase">XP REWARD</p>
+                      <p className="text-xs text-yellow-500 font-bold">+{mission.xpReward} XP</p>
+                    </div>
+                    {isUnlocked ? (
+                      <button className="flex items-center gap-1 text-xs bg-[#22c55e] text-black font-extrabold px-3 py-1.5 rounded hover:bg-green-400 transition-colors">
+                        MULAI <Play className="w-3 h-3 fill-current" />
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-600">Locked</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {currentScreen === 'game' && (
+        <main className="flex-1 flex overflow-hidden">
+          
+          {/* LEFT SIDEBAR: MISSION CARD & OBJECTIVES */}
+          <aside className="w-72 border-r border-white/10 bg-[#0f1115] flex flex-col shrink-0">
+            {activeMission ? (
+              <div className="flex-1 flex flex-col overflow-y-auto">
+                
+                {/* Active Mission Overview */}
+                <div className="p-4 border-b border-white/5">
+                  <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Misi Aktif</h2>
+                  <div className="p-3.5 bg-white/5 rounded-xl border border-white/10">
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="text-[11px] text-yellow-500 font-bold mono">{activeMission.code}</p>
+                      <span className="text-[9px] bg-white/5 text-slate-400 px-1.5 py-0.5 rounded">{activeMission.difficulty}</span>
+                    </div>
+                    <p className="text-sm font-extrabold text-white">{activeMission.title}</p>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{activeMission.description}</p>
+                  </div>
+                </div>
+
+                {/* Objectives Checklist */}
+                <div className="p-4 flex-1">
+                  <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Tujuan Praktikum</h2>
+                  <div className="space-y-2.5">
+                    {activeMission.objectives.map((obj) => (
+                      <div 
+                        key={obj.id} 
+                        className={`p-3 rounded-lg border transition-all flex gap-3 items-start ${
+                          obj.completed 
+                            ? 'bg-green-500/5 border-green-500/20 text-green-400' 
+                            : 'bg-white/5 border-white/5 text-slate-300'
+                        }`}
+                      >
+                        <input 
+                          type="checkbox" 
+                          checked={obj.completed} 
+                          readOnly 
+                          className="mt-0.5 rounded border-slate-700 bg-slate-900 text-[#22c55e] focus:ring-0 pointer-events-none" 
+                        />
+                        <span className="text-xs leading-relaxed">{obj.text}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {activeMission.objectives.every(o => o.completed) && (
+                    <div className="mt-4 pt-4 border-t border-white/5">
+                      <button
+                        onClick={() => {
+                          playSound('success');
+                          const nextXp = xp + activeMission.xpReward;
+                          setXp(nextXp);
+
+                          const nextCompleted = [...completedMissions];
+                          if (!nextCompleted.includes(activeMission.id)) {
+                            nextCompleted.push(activeMission.id);
+                          }
+                          setCompletedMissions(nextCompleted);
+
+                          const nextUnlocked = [...unlockedMissions];
+                          const nextId = activeMission.id + 1;
+                          if (nextId <= MISSIONS_DATA.length && !nextUnlocked.includes(nextId)) {
+                            nextUnlocked.push(nextId);
+                          }
+                          setUnlockedMissions(nextUnlocked);
+                          saveProgress(nextXp, nextCompleted, nextUnlocked);
+
+                          setTerminalLogs(prev => [
+                            ...prev,
+                            `\n🏆 [MISI SELESAI] Selamat! Anda berhasil menyelesaikan ${activeMission.title}!`,
+                            `✨ Hadiah XP: +${activeMission.xpReward} XP. Total XP Anda sekarang: ${nextXp} XP.`
+                          ]);
+
+                          // Open success modal
+                          setSuccessModalData({
+                            id: activeMission.id,
+                            title: activeMission.title,
+                            xpReward: activeMission.xpReward
+                          });
+                          setShowSuccessModal(true);
+                        }}
+                        className="w-full py-3 bg-[#22c55e] hover:bg-[#1ebd53] text-black font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center justify-center gap-2 animate-pulse cursor-pointer border border-[#22c55e]"
+                      >
+                        🏆 Klaim & Selesaikan Misi!
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* INVENTORY PANEL */}
+                <div className="p-4 bg-green-500/5 border-t border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[9px] font-extrabold text-[#22c55e] uppercase tracking-widest">Inventory Alat</span>
+                    <span className="text-[9px] text-slate-500 mono">Kabel Hubung</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    <button 
+                      onClick={() => { playSound('click'); setSelectedTool(selectedTool === 'utp' ? null : 'utp'); setWireStartNode(null); }}
+                      className={`aspect-square rounded border flex flex-col items-center justify-center gap-1 transition-all ${
+                        selectedTool === 'utp' ? 'bg-[#22c55e]/20 border-[#22c55e]' : 'bg-[#15171b] border-white/10 hover:border-white/30'
+                      }`}
+                      title="Kabel LAN UTP"
+                    >
+                      <Cable className={`w-5 h-5 ${selectedTool === 'utp' ? 'text-[#22c55e]' : 'text-slate-400'}`} />
+                      <span className="text-[8px] mono">UTP</span>
+                    </button>
+                    
+                    <button 
+                      onClick={() => { playSound('click'); setSelectedTool(selectedTool === 'console' ? null : 'console'); setWireStartNode(null); }}
+                      className={`aspect-square rounded border flex flex-col items-center justify-center gap-1 transition-all ${
+                        selectedTool === 'console' ? 'bg-blue-500/20 border-blue-500' : 'bg-[#15171b] border-white/10 hover:border-white/30'
+                      }`}
+                      title="Kabel Console Serial"
+                    >
+                      <Cpu className={`w-5 h-5 ${selectedTool === 'console' ? 'text-blue-400' : 'text-slate-400'}`} />
+                      <span className="text-[8px] mono">Console</span>
+                    </button>
+
+                    <div className="aspect-square bg-slate-800/30 rounded border border-white/5 flex flex-col items-center justify-center opacity-30 cursor-not-allowed">
+                      <Wifi className="w-5 h-5 text-slate-600" />
+                      <span className="text-[8px] mono text-slate-600">SFP</span>
+                    </div>
+
+                    <div className="aspect-square bg-slate-800/30 rounded border border-white/5 flex flex-col items-center justify-center opacity-30 cursor-not-allowed">
+                      <Database className="w-5 h-5 text-slate-600" />
+                      <span className="text-[8px] mono text-slate-600">Fiber</span>
+                    </div>
+                  </div>
+                  {selectedTool && (
+                    <p className="text-[10px] text-yellow-500 mt-2 animate-pulse font-mono">
+                      ⚡ Klik PORT pada perangkat untuk menyambung...
+                    </p>
+                  )}
+                </div>
+
+              </div>
+            ) : (
+              <div className="p-4 text-center text-slate-500 my-auto">
+                <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-xs">Silakan pilih misi di Lobby terlebih dahulu.</p>
+              </div>
+            )}
+          </aside>
+
+          {/* CENTER PANEL: NETWORK MAP SIMULATOR */}
+          <div className="flex-1 grid-bg flex flex-col overflow-hidden relative">
+            
+            {/* CANVAS WORKSPACE BAR */}
+            <div className="h-10 border-b border-white/10 bg-[#15171b]/80 px-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Network className="w-4 h-4 text-[#22c55e]" />
+                <span className="text-xs font-bold text-white tracking-wide uppercase">Topologi Jaringan Lab Aktif</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => {
+                    if (activeMission) {
+                      playSound('fail');
+                      initializeMissionState(activeMission.id);
+                      setTerminalLogs(prev => [...prev, '🔄 [SYSTEM] Jaringan dikembalikan ke konfigurasi awal untuk Misi ini!']);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 text-[10px] bg-red-950/40 hover:bg-red-900/30 text-red-400 px-2 py-1 rounded border border-red-500/20 transition-all font-mono"
+                >
+                  <RefreshCw className="w-3 h-3" /> RESET LAB
+                </button>
+              </div>
+            </div>
+
+            {/* INTERACTIVE NETWORK MAP AREA */}
+            <div className="flex-1 p-6 relative flex items-center justify-center overflow-auto">
+              
+              {/* Device Topology Graph */}
+              <div className="grid grid-cols-4 gap-x-12 gap-y-8 w-full max-w-4xl relative z-10">
+                
+                {/* LINE 1: ROUTER & INTERNET */}
+                <div className="col-span-1"></div>
+                
+                {/* Router Card */}
+                <div 
+                  className={`col-span-2 p-3 bg-[#15171b] border rounded-xl flex flex-col relative transition-all ${
+                    currentCliTarget === 'router' ? 'border-[#22c55e] ring-2 ring-[#22c55e]/10' : 'border-white/10 hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-[#22c55e]" />
+                      <span className="text-xs font-bold text-white">Router Utama</span>
+                    </div>
+                    <span className="text-[8px] font-mono bg-white/5 px-1.5 py-0.5 rounded text-slate-400">Gi0/0 - Gi0/1</span>
+                  </div>
+                  
+                  {/* Ports list */}
+                  <div className="flex gap-2 mb-2">
+                    <button 
+                      onClick={() => handlePortClick('router', 'Gi0/0')}
+                      className={`text-[9px] font-mono px-2 py-1 rounded flex items-center gap-1 border transition-all ${
+                        connections.some(c => (c.from === 'router' && c.fromPort === 'Gi0/0') || (c.to === 'router' && c.toPort === 'Gi0/0'))
+                          ? 'bg-green-950/40 border-green-500/40 text-green-400'
+                          : 'bg-black border-white/10 text-slate-500 hover:text-white'
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${connections.some(c => (c.from === 'router' && c.fromPort === 'Gi0/0') || (c.to === 'router' && c.toPort === 'Gi0/0')) ? 'bg-green-500 server-led' : 'bg-red-500'}`} />
+                      Gi0/0
+                    </button>
+                    <button 
+                      onClick={() => handlePortClick('router', 'Console')}
+                      className={`text-[9px] font-mono px-2 py-1 rounded flex items-center gap-1 border transition-all ${
+                        connections.some(c => (c.from === 'router' && c.fromPort === 'Console') || (c.to === 'router' && c.toPort === 'Console'))
+                          ? 'bg-blue-950/40 border-blue-500/40 text-blue-400'
+                          : 'bg-black border-white/10 text-slate-500 hover:text-white'
+                      }`}
+                    >
+                      Console
+                    </button>
+                  </div>
+
+                  <div className="flex justify-end gap-1">
+                    <button 
+                      onClick={() => { playSound('click'); setCurrentCliTarget('router'); }}
+                      className="text-[9px] bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20 px-2 py-0.5 rounded hover:bg-[#22c55e] hover:text-black font-mono"
+                    >
+                      CLI CONSOLE
+                    </button>
+                  </div>
+                </div>
+
+                <div className="col-span-1 bg-[#101216] border border-white/5 p-3 rounded-xl flex flex-col justify-center text-center">
+                  <Wifi className="w-6 h-6 text-blue-400 mx-auto mb-1 animate-pulse" />
+                  <span className="text-[10px] font-bold text-white">INTERNET CLOUD</span>
+                  <span className="text-[8px] text-slate-500 font-mono">GW: 10.10.10.1</span>
+                </div>
+
+                {/* LINE 2: SWITCH */}
+                <div className="col-span-4 p-4 bg-[#15171b] border border-white/10 rounded-xl flex flex-col">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center gap-2">
+                      <Server className="w-4 h-4 text-slate-400" />
+                      <span className="text-xs font-bold text-white">Switch Utama L2 (Cisco Catalyst 2960)</span>
+                    </div>
+                    <span className="text-[9px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded font-mono">STATUS: UP</span>
+                  </div>
+
+                  {/* Patch Panel Ports Fa0/1 to Fa0/8 */}
+                  <div className="grid grid-cols-8 gap-2.5 mb-3">
+                    {['Fa0/1', 'Fa0/2', 'Fa0/3', 'Fa0/4', 'Fa0/5', 'Fa0/6', 'Fa0/7', 'Fa0/8'].map((port) => {
+                      const isConnected = connections.some(c => (c.from === 'switch' && c.fromPort === port) || (c.to === 'switch' && c.toPort === port));
+                      const vlan = switchVlans[port] || 1;
+                      
+                      return (
+                        <button 
+                          key={port}
+                          onClick={() => handlePortClick('switch', port)}
+                          className={`p-2 border rounded bg-black flex flex-col items-center transition-all ${
+                            isConnected ? 'border-green-500/40 text-green-400' : 'border-white/10 text-slate-500 hover:text-white'
+                          }`}
+                        >
+                          <div className={`w-2 h-2 rounded-full mb-1 ${isConnected ? 'bg-green-500 server-led' : 'bg-slate-700'}`} />
+                          <span className="text-[8px] font-mono leading-none">{port}</span>
+                          <span className="text-[7px] font-mono mt-1 px-1 bg-white/5 rounded text-yellow-500 leading-none">V{vlan}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <button 
+                      onClick={() => handlePortClick('switch', 'Console')}
+                      className={`text-[9px] font-mono px-2 py-1 rounded border ${
+                        connections.some(c => (c.from === 'switch' && c.fromPort === 'Console') || (c.to === 'switch' && c.toPort === 'Console'))
+                          ? 'bg-blue-950/40 border-blue-500/40 text-blue-400'
+                          : 'bg-black border-white/10 text-slate-500 hover:text-white'
+                      }`}
+                    >
+                      Console Port
+                    </button>
+                    
+                    <button 
+                      onClick={() => { playSound('click'); setCurrentCliTarget('switch'); }}
+                      className="text-[9px] bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20 px-2.5 py-1 rounded hover:bg-[#22c55e] hover:text-black font-mono font-bold"
+                    >
+                      CLI SWITCH
+                    </button>
+                  </div>
+                </div>
+
+                {/* LINE 3: PC CLIENTS */}
+                {/* PC-1 */}
+                <div 
+                  className={`p-3 rounded-xl border flex flex-col cursor-pointer transition-all ${
+                    openedPcId === 'pc1' ? 'border-[#22c55e] bg-[#15171b]' : 'bg-[#15171b]/60 border-white/10 hover:border-white/20'
+                  }`}
+                  onClick={() => { playSound('click'); setOpenedPcId('pc1'); setPcTab('config'); }}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <Monitor className="w-5 h-5 text-slate-400" />
+                    <span className="text-[7px] font-mono bg-[#22c55e]/10 text-[#22c55e] px-1 rounded">Dept HR</span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white">PC Client-1</h4>
+                  <p className="text-[9px] text-slate-500 font-mono mt-0.5">{pc1Ip.mode === 'dhcp' ? 'DHCP' : pc1Ip.ip || 'No IP Address'}</p>
+                  
+                  <div className="mt-3 flex justify-between items-center">
+                    <span className="text-[8px] text-slate-400 mono">LAN Port</span>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handlePortClick('pc1', 'Eth0'); }}
+                      className={`w-4 h-4 rounded border flex items-center justify-center ${connections.some(c => c.from === 'pc1' || c.to === 'pc1') ? 'bg-green-500/20 border-green-500 text-green-500' : 'bg-black border-white/20'}`}
+                    >
+                      •
+                    </button>
+                  </div>
+                </div>
+
+                {/* PC-2 */}
+                <div 
+                  className={`p-3 rounded-xl border flex flex-col cursor-pointer transition-all ${
+                    openedPcId === 'pc2' ? 'border-[#22c55e] bg-[#15171b]' : 'bg-[#15171b]/60 border-white/10 hover:border-white/20'
+                  }`}
+                  onClick={() => { playSound('click'); setOpenedPcId('pc2'); setPcTab('config'); }}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <Monitor className="w-5 h-5 text-slate-400" />
+                    <span className="text-[7px] font-mono bg-[#22c55e]/10 text-[#22c55e] px-1 rounded">Dept HR</span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white">PC Client-2</h4>
+                  <p className="text-[9px] text-slate-500 font-mono mt-0.5">{pc2Ip.mode === 'dhcp' ? 'DHCP' : pc2Ip.ip || 'No IP Address'}</p>
+                  
+                  <div className="mt-3 flex justify-between items-center">
+                    <span className="text-[8px] text-slate-400 mono">LAN Port</span>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handlePortClick('pc2', 'Eth0'); }}
+                      className={`w-4 h-4 rounded border flex items-center justify-center ${connections.some(c => c.from === 'pc2' || c.to === 'pc2') ? 'bg-green-500/20 border-green-500 text-green-500' : 'bg-black border-white/20'}`}
+                    >
+                      •
+                    </button>
+                  </div>
+                </div>
+
+                {/* PC-3 */}
+                <div 
+                  className={`p-3 rounded-xl border flex flex-col cursor-pointer transition-all ${
+                    openedPcId === 'pc3' ? 'border-[#22c55e] bg-[#15171b]' : 'bg-[#15171b]/60 border-white/10 hover:border-white/20'
+                  }`}
+                  onClick={() => { playSound('click'); setOpenedPcId('pc3'); setPcTab('config'); }}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <Monitor className="w-5 h-5 text-slate-400" />
+                    <span className="text-[7px] font-mono bg-yellow-500/10 text-yellow-400 px-1 rounded">Dept Finance</span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white">PC Client-3</h4>
+                  <p className="text-[9px] text-slate-500 font-mono mt-0.5">{pc3Ip.ip}</p>
+                  
+                  {pc2Ip.ip === pc3Ip.ip && (
+                    <span className="text-[8px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded font-bold animate-pulse text-center mt-1">IP CONFLICT</span>
+                  )}
+
+                  <div className="mt-3 flex justify-between items-center">
+                    <span className="text-[8px] text-slate-400 mono">LAN Port</span>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handlePortClick('pc3', 'Eth0'); }}
+                      className={`w-4 h-4 rounded border flex items-center justify-center ${connections.some(c => c.from === 'pc3' || c.to === 'pc3') ? 'bg-green-500/20 border-green-500 text-green-500' : 'bg-black border-white/20'}`}
+                    >
+                      •
+                    </button>
+                  </div>
+                </div>
+
+                {/* Laptop Admin */}
+                <div 
+                  className={`p-3 rounded-xl border flex flex-col cursor-pointer transition-all ${
+                    openedPcId === 'laptop' ? 'border-blue-500 bg-[#15171b]' : 'bg-[#15171b]/60 border-white/10 hover:border-white/20'
+                  }`}
+                  onClick={() => { playSound('click'); setOpenedPcId('laptop'); setPcTab('config'); }}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <Monitor className="w-5 h-5 text-blue-400" />
+                    <span className="text-[7px] font-mono bg-blue-500/10 text-blue-400 px-1 rounded">Laptop Admin</span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white">Laptop Admin</h4>
+                  <p className="text-[9px] text-slate-500 font-mono mt-0.5">RS232 Serial Port</p>
+                  
+                  <div className="mt-3 flex flex-col gap-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[8px] text-slate-400 mono">RS232</span>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handlePortClick('laptop', 'RS232'); }}
+                        className={`w-4 h-4 rounded border flex items-center justify-center ${connections.some(c => c.from === 'laptop' && c.fromPort === 'RS232' || c.to === 'laptop' && c.toPort === 'RS232') ? 'bg-blue-500/20 border-blue-500 text-blue-500' : 'bg-black border-white/20'}`}
+                      >
+                        •
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* OVERLAY OBJECTIVE CHECKLIST BANNER */}
+              <div className="absolute top-4 right-4 w-52 bg-[#1a1c22]/90 border border-white/10 p-3.5 rounded-lg shadow-2xl backdrop-blur z-20 pointer-events-none">
+                <p className="text-[9px] text-slate-500 uppercase font-mono tracking-widest mb-2 font-extrabold">Daftar Koneksi Kabel</p>
+                {connections.length === 0 ? (
+                  <p className="text-[10px] text-slate-500 italic">Belum ada kabel terhubung.</p>
+                ) : (
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {connections.map((c, idx) => (
+                      <div key={idx} className="flex justify-between items-center gap-1.5 text-[9px] bg-white/5 p-1 rounded">
+                        <span className="truncate max-w-[120px] text-slate-400 font-mono">{c.from.toUpperCase()}({c.fromPort})➔{c.to.toUpperCase()}({c.toPort})</span>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); removeConnection(idx); }}
+                          className="text-red-400 hover:text-red-300 px-1 pointer-events-auto"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* LOWER TERMINAL: INTERACTIVE SW/ROUTER CLI CONSOLE */}
+            <div className="h-52 border-t border-white/10 bg-[#0a0b0e] flex flex-col shrink-0">
+              
+              {/* Terminal Connection Bar */}
+              <div className="px-4 py-1.5 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-[#22c55e] rounded-full server-led" />
+                  <span className="mono text-[10px] text-slate-400 uppercase tracking-wide">
+                    {currentCliTarget 
+                      ? `Koneksi CLI Aktif: ${currentCliTarget.toUpperCase()}# (Tipe: Cisco IOS)` 
+                      : 'PILIH PERANGKAT (SWITCH/ROUTER) UNTUK MEMBUKA CLI CONSOLE'}
+                  </span>
+                </div>
+                {currentCliTarget && (
+                  <button 
+                    onClick={() => { playSound('click'); setCurrentCliTarget(null); }}
+                    className="text-[9px] bg-red-950/40 hover:bg-red-900/40 text-red-400 px-2 py-0.5 rounded border border-red-500/20"
+                  >
+                    Tutup CLI
+                  </button>
+                )}
+              </div>
+
+              {/* Terminal Output Logs */}
+              <div className="flex-1 p-4 mono text-xs text-green-400 overflow-y-auto leading-relaxed font-mono">
+                {terminalLogs.length === 0 ? (
+                  <div className="text-slate-500 flex flex-col items-center justify-center h-full gap-2">
+                    <TerminalIcon className="w-8 h-8 opacity-40 animate-pulse" />
+                    <p className="text-[11px] text-center">Silakan klik tombol "CLI SWITCH" atau "CLI ROUTER" pada peranti jaringan di atas untuk mengaktifkan terminal konfigurasi.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {terminalLogs.map((log, idx) => (
+                      <pre key={idx} className="whitespace-pre-wrap font-mono break-all">{log}</pre>
+                    ))}
+                    <div ref={terminalBottomRef} />
+                  </div>
+                )}
+              </div>
+
+              {/* Terminal Input Box */}
+              {currentCliTarget && (
+                <form onSubmit={handleCliSubmit} className="border-t border-white/10 bg-black flex items-center shrink-0">
+                  <span className="text-green-500 mono font-bold pl-4 pr-1 text-xs">{currentCliTarget === 'switch' ? 'Switch' : 'Router'}#</span>
+                  <input 
+                    type="text"
+                    value={cliInput}
+                    onChange={(e) => setCliInput(e.target.value)}
+                    placeholder="Ketik perintah Cisco IOS di sini... (Contoh: 'enable', 'conf t', 'help')"
+                    className="flex-1 bg-transparent px-2 py-2 text-white mono text-xs font-mono"
+                    autoFocus
+                  />
+                  <button 
+                    type="submit" 
+                    className="bg-[#22c55e] hover:bg-green-400 text-black px-4 py-2 text-xs font-extrabold flex items-center gap-1 shrink-0 transition-colors"
+                  >
+                    ENTER <ArrowRight className="w-3 h-3" />
+                  </button>
+                </form>
+              )}
+            </div>
+
+          </div>
+
+          {/* RIGHT SIDEBAR: REALTIME MONITOR & AI INSTRUCTOR HELP */}
+          <aside className="w-80 border-l border-white/10 bg-[#0f1115] p-4 flex flex-col gap-5 shrink-0 overflow-y-auto">
+            
+            {/* NETWORK TELEMETRY */}
+            <section className="bg-white/5 p-3 rounded-lg border border-white/5">
+              <h3 className="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                <Wifi className="w-3 h-3 text-[#22c55e]" /> LIVE TRAFFIC MONITOR
+              </h3>
+              
+              {/* Telemetry Chart Simulation SVG */}
+              <div className="h-14 w-full bg-black/40 rounded border border-white/5 relative overflow-hidden mb-3">
+                <svg viewBox="0 0 100 40" className="w-full h-full text-[#22c55e] opacity-35 animate-pulse">
+                  <path d="M0 35 Q15 15, 30 25 T60 5 T90 30 L100 20 L100 40 L0 40 Z" fill="currentColor" />
+                </svg>
+                <div className="absolute inset-0 p-2 flex justify-between items-end">
+                  <p className="mono text-xs font-extrabold text-white">{metrics.traffic} KB/s</p>
+                  <p className="mono text-[8px] text-slate-500 uppercase font-bold">Total throughput</p>
+                </div>
+              </div>
+
+              {/* Status Indicators */}
+              <div className="space-y-2.5">
+                <div>
+                  <div className="flex justify-between text-[9px] uppercase font-bold mb-1 font-mono">
+                    <span className="text-slate-400">Latency</span>
+                    <span className={`${metrics.latency > 100 ? 'text-red-400' : 'text-green-500'}`}>{metrics.latency}ms</span>
+                  </div>
+                  <div className="w-full h-1 bg-white/5 rounded-full">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-500 ${metrics.latency > 100 ? 'bg-red-500' : 'bg-[#22c55e]'}`} 
+                      style={{ width: `${Math.min(100, metrics.latency / 4)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[9px] uppercase font-bold mb-1 font-mono">
+                    <span className="text-slate-400">Packet Loss</span>
+                    <span className={`${metrics.loss > 2 ? 'text-red-400 animate-pulse' : 'text-green-500'}`}>{metrics.loss}%</span>
+                  </div>
+                  <div className="w-full h-1 bg-white/5 rounded-full">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-500 ${metrics.loss > 2 ? 'bg-red-500' : 'bg-[#22c55e]'}`} 
+                      style={{ width: `${Math.min(100, metrics.loss * 10)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* AI TUTOR: TANYA INSTRUKTUR JAR */}
+            <section className="flex-1 flex flex-col bg-white/5 rounded-lg border border-white/5 p-3 overflow-hidden min-h-[250px]">
+              <div className="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                <div className="w-2.5 h-2.5 bg-[#22c55e] rounded-full server-led" />
+                <h4 className="text-[10px] font-extrabold text-white uppercase tracking-wider">Tanya Instruktur Jar</h4>
+              </div>
+
+              {/* Chat Thread */}
+              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 mb-2 max-h-[280px]">
+                {aiChat.map((msg, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`p-2.5 rounded-lg text-xs leading-relaxed ${
+                      msg.sender === 'user' 
+                        ? 'bg-[#22c55e]/10 border border-[#22c55e]/15 text-white ml-6 text-right' 
+                        : 'bg-black/30 border border-white/5 text-slate-300 mr-6'
+                    }`}
+                  >
+                    <p className="font-bold text-[8px] uppercase tracking-widest text-slate-400 mb-0.5">
+                      {msg.sender === 'user' ? 'Anda (Siswa)' : 'Instruktur Jar'}
+                    </p>
+                    <p className="whitespace-pre-wrap">{msg.text}</p>
+                  </div>
+                ))}
+                {aiLoading && (
+                  <div className="text-slate-500 italic text-[11px] animate-pulse flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Instruktur sedang mengetik...
+                  </div>
+                )}
+              </div>
+
+              {/* Chat Form */}
+              <form onSubmit={handleAiChatSubmit} className="mt-auto flex border border-white/10 rounded overflow-hidden">
+                <input 
+                  type="text"
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  placeholder="Tanyakan materi TKJ di sini..."
+                  className="flex-1 bg-black/40 px-2 py-1.5 text-xs text-white"
+                  disabled={aiLoading}
+                />
+                <button 
+                  type="submit" 
+                  className="bg-[#22c55e] text-black px-3 py-1.5 hover:bg-green-400 shrink-0 flex items-center justify-center transition-colors"
+                  disabled={aiLoading}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            </section>
+
+            {/* INSTRUCTOR TIP TIP OF THE MISSION */}
+            {activeMission && (
+              <section className="p-3 border border-yellow-500/20 bg-yellow-500/5 rounded-lg mt-auto shrink-0">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="w-1.5 h-3 bg-yellow-500 rounded-full" />
+                  <h4 className="text-[10px] font-extrabold text-yellow-500 uppercase font-mono">Bantuan Teknis</h4>
+                </div>
+                <p className="text-[10px] leading-relaxed italic text-slate-300 font-mono whitespace-pre-wrap">
+                  {activeMission.technicalGuide}
+                </p>
+              </section>
+            )}
+
+          </aside>
+
+        </main>
+      )}
+
+      {currentScreen === 'handbook' && (
+        <div className="flex-1 overflow-y-auto grid-bg p-8 flex flex-col items-center">
+          <div className="max-w-3xl w-full">
+            <h2 className="text-3xl font-extrabold text-white tracking-tight mb-2 flex items-center gap-2">
+              <BookOpen className="w-8 h-8 text-[#22c55e]" /> Buku Panduan Teknik Komputer Jaringan (TKJ)
+            </h2>
+            <p className="text-slate-400 text-xs mb-8 font-mono uppercase tracking-widest">Modul Teori dan Praktis Lab Simulator GAMEJar</p>
+
+            {/* Theory Sections */}
+            <div className="space-y-6">
+              
+              <div className="p-5 bg-[#15171b] border border-white/10 rounded-xl">
+                <h3 className="text-md font-bold text-[#22c55e] mb-2 font-mono flex items-center gap-2">
+                  <span>1.</span> Pengkabelan (Cabling) UTP
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Kabel <strong>UTP (Unshielded Twisted Pair)</strong> dengan konektor RJ-45 digunakan untuk menyambungkan perangkat lokal. 
+                  Ada dua standar susunan kabel: <strong>Straight-through</strong> (untuk perangkat berbeda, seperti PC ke Switch) 
+                  dan <strong>Crossover</strong> (untuk perangkat sejenis, seperti PC ke PC atau Switch ke Switch).
+                </p>
+              </div>
+
+              <div className="p-5 bg-[#15171b] border border-white/10 rounded-xl">
+                <h3 className="text-md font-bold text-[#22c55e] mb-2 font-mono flex items-center gap-2">
+                  <span>2.</span> Pengalamatan IP (IP Addressing)
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed mb-3">
+                  IP Address adalah alamat logis perangkat di jaringan. Agar dua perangkat dapat saling berkomunikasi secara langsung, 
+                  keduanya harus berada di dalam subnet yang sama. Subnet ditentukan oleh <strong>Subnet Mask</strong>.
+                </p>
+                <div className="bg-black p-3.5 rounded border border-white/5 mono text-[11px] font-mono leading-relaxed">
+                  Contoh Subnet 192.168.1.0/24:<br />
+                  - IP Gateway Router: 192.168.1.1 (Pintu keluar LAN)<br />
+                  - IP PC Client-1: 192.168.1.2 (Subnet Mask: 255.255.255.0)<br />
+                  - IP PC Client-2: 192.168.1.3 (Subnet Mask: 255.255.255.0)
+                </div>
+              </div>
+
+              <div className="p-5 bg-[#15171b] border border-white/10 rounded-xl">
+                <h3 className="text-md font-bold text-[#22c55e] mb-2 font-mono flex items-center gap-2">
+                  <span>3.</span> Virtual LAN (VLAN)
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  <strong>VLAN</strong> digunakan untuk membagi satu broadcast domain fisik menjadi beberapa broadcast domain logis 
+                  di dalam Switch Layer 2. Hal ini bertujuan meningkatkan performa jaringan, menyederhanakan administrasi, 
+                  dan memperketat keamanan lalu lintas data antardepartemen.
+                </p>
+              </div>
+
+              <div className="p-5 bg-[#15171b] border border-white/10 rounded-xl">
+                <h3 className="text-md font-bold text-[#22c55e] mb-2 font-mono flex items-center gap-2">
+                  <span>4.</span> DHCP (Dynamic Host Configuration Protocol)
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Layanan <strong>DHCP Server</strong> mengalokasikan alamat IP secara otomatis ke perangkat client yang baru terhubung. 
+                  Komponen utama DHCP meliputi DHCP Pool, IP Range, Default Gateway (Router), dan DNS Server. 
+                  Siswa tidak perlu repot mengetik IP statis di setiap host.
+                </p>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DETAILED DIALOG: PC NETWORK SETTINGS OVERLAY */}
+      {openedPcId && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="w-[580px] h-[480px] bg-[#15171b] border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+            
+            {/* Modal Title bar */}
+            <div className="bg-slate-900/90 px-4 py-3 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#22c55e]">
+                <Monitor className="w-4 h-4" />
+                <span className="text-xs font-bold uppercase font-mono">{openedPcId.toUpperCase()} Desktop Interface</span>
+              </div>
+              <button 
+                onClick={() => { playSound('click'); setOpenedPcId(null); }}
+                className="text-slate-400 hover:text-white text-xs font-mono bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded"
+              >
+                ✕ Tutup
+              </button>
+            </div>
+
+            {/* Inside PC App Toolbar tabs */}
+            <div className="bg-white/5 border-b border-white/5 px-4 flex gap-1 pt-1.5 shrink-0">
+              <button 
+                onClick={() => { playSound('click'); setPcTab('config'); }}
+                className={`text-xs px-3 py-1.5 rounded-t-lg font-mono flex items-center gap-1.5 transition-all ${
+                  pcTab === 'config' ? 'bg-[#15171b] border-t border-x border-white/10 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Network className="w-3.5 h-3.5" /> Konfigurasi IP
+              </button>
+              <button 
+                onClick={() => { playSound('click'); setPcTab('desktop'); }}
+                className={`text-xs px-3 py-1.5 rounded-t-lg font-mono flex items-center gap-1.5 transition-all ${
+                  pcTab === 'desktop' ? 'bg-[#15171b] border-t border-x border-white/10 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <TerminalIcon className="w-3.5 h-3.5" /> Command Prompt
+              </button>
+              <button 
+                onClick={() => { playSound('click'); setPcTab('web'); }}
+                className={`text-xs px-3 py-1.5 rounded-t-lg font-mono flex items-center gap-1.5 transition-all ${
+                  pcTab === 'web' ? 'bg-[#15171b] border-t border-x border-white/10 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" /> Web Browser
+              </button>
+            </div>
+
+            {/* TAB CONTENTS */}
+            <div className="flex-1 p-5 overflow-y-auto">
+              {pcTab === 'config' && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center bg-white/5 p-3 rounded border border-white/5 mb-4">
+                    <p className="text-xs text-slate-300">Konfigurasi Pengalamatan IP Perangkat</p>
+                    <div className="flex bg-black p-1 rounded border border-white/10 gap-1 font-mono">
+                      <button 
+                        onClick={() => {
+                          playSound('click');
+                          if (openedPcId === 'pc1') setPc1Ip(prev => ({ ...prev, mode: 'static' }));
+                          else if (openedPcId === 'pc2') setPc2Ip(prev => ({ ...prev, mode: 'static' }));
+                          else if (openedPcId === 'pc3') setPc3Ip(prev => ({ ...prev, mode: 'static' }));
+                        }}
+                        className={`text-[10px] px-2.5 py-1 rounded ${
+                          (openedPcId === 'pc1' && pc1Ip.mode === 'static') ||
+                          (openedPcId === 'pc2' && pc2Ip.mode === 'static') ||
+                          (openedPcId === 'pc3' && pc3Ip.mode === 'static') ||
+                          openedPcId === 'laptop'
+                            ? 'bg-[#22c55e] text-black font-bold' : 'text-slate-400'
+                        }`}
+                      >
+                        STATIC
+                      </button>
+                      {openedPcId !== 'laptop' && (
+                        <button 
+                          onClick={() => {
+                            playSound('click');
+                            if (openedPcId === 'pc1') setPc1Ip(prev => ({ ...prev, mode: 'dhcp' }));
+                            else if (openedPcId === 'pc2') setPc2Ip(prev => ({ ...prev, mode: 'dhcp' }));
+                            else if (openedPcId === 'pc3') setPc3Ip(prev => ({ ...prev, mode: 'dhcp' }));
+                          }}
+                          className={`text-[10px] px-2.5 py-1 rounded ${
+                            (openedPcId === 'pc1' && pc1Ip.mode === 'dhcp') ||
+                            (openedPcId === 'pc2' && pc2Ip.mode === 'dhcp') ||
+                            (openedPcId === 'pc3' && pc3Ip.mode === 'dhcp')
+                              ? 'bg-[#22c55e] text-black font-bold' : 'text-slate-400'
+                          }`}
+                        >
+                          DHCP
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Config fields */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-extrabold">IP Address</label>
+                      <input 
+                        type="text"
+                        value={openedPcId === 'pc1' ? pc1Ip.ip : openedPcId === 'pc2' ? pc2Ip.ip : openedPcId === 'pc3' ? pc3Ip.ip : laptopIp.ip}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (openedPcId === 'pc1') setPc1Ip(prev => ({ ...prev, ip: val }));
+                          else if (openedPcId === 'pc2') setPc2Ip(prev => ({ ...prev, ip: val }));
+                          else if (openedPcId === 'pc3') setPc3Ip(prev => ({ ...prev, ip: val }));
+                          else if (openedPcId === 'laptop') setLaptopIp(prev => ({ ...prev, ip: val }));
+                        }}
+                        disabled={openedPcId !== 'laptop' && ((openedPcId === 'pc1' && pc1Ip.mode === 'dhcp') || (openedPcId === 'pc2' && pc2Ip.mode === 'dhcp') || (openedPcId === 'pc3' && pc3Ip.mode === 'dhcp'))}
+                        className="w-full bg-black border border-white/15 rounded p-2 text-xs mono font-mono"
+                        placeholder="Contoh: 192.168.1.2"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-extrabold">Subnet Mask</label>
+                      <input 
+                        type="text"
+                        value={openedPcId === 'pc1' ? pc1Ip.mask : openedPcId === 'pc2' ? pc2Ip.mask : openedPcId === 'pc3' ? pc3Ip.mask : laptopIp.mask}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (openedPcId === 'pc1') setPc1Ip(prev => ({ ...prev, mask: val }));
+                          else if (openedPcId === 'pc2') setPc2Ip(prev => ({ ...prev, mask: val }));
+                          else if (openedPcId === 'pc3') setPc3Ip(prev => ({ ...prev, mask: val }));
+                          else if (openedPcId === 'laptop') setLaptopIp(prev => ({ ...prev, mask: val }));
+                        }}
+                        disabled={openedPcId !== 'laptop' && ((openedPcId === 'pc1' && pc1Ip.mode === 'dhcp') || (openedPcId === 'pc2' && pc2Ip.mode === 'dhcp') || (openedPcId === 'pc3' && pc3Ip.mode === 'dhcp'))}
+                        className="w-full bg-black border border-white/15 rounded p-2 text-xs mono font-mono"
+                        placeholder="Contoh: 255.255.255.0"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-extrabold">Default Gateway</label>
+                      <input 
+                        type="text"
+                        value={openedPcId === 'pc1' ? pc1Ip.gw : openedPcId === 'pc2' ? pc2Ip.gw : openedPcId === 'pc3' ? pc3Ip.gw : laptopIp.gw}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (openedPcId === 'pc1') setPc1Ip(prev => ({ ...prev, gw: val }));
+                          else if (openedPcId === 'pc2') setPc2Ip(prev => ({ ...prev, gw: val }));
+                          else if (openedPcId === 'pc3') setPc3Ip(prev => ({ ...prev, gw: val }));
+                          else if (openedPcId === 'laptop') setLaptopIp(prev => ({ ...prev, gw: val }));
+                        }}
+                        disabled={openedPcId !== 'laptop' && ((openedPcId === 'pc1' && pc1Ip.mode === 'dhcp') || (openedPcId === 'pc2' && pc2Ip.mode === 'dhcp') || (openedPcId === 'pc3' && pc3Ip.mode === 'dhcp'))}
+                        className="w-full bg-black border border-white/15 rounded p-2 text-xs mono font-mono"
+                        placeholder="Contoh: 192.168.1.1"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-extrabold">DNS Server</label>
+                      <input 
+                        type="text"
+                        value={openedPcId === 'pc1' ? pc1Ip.dns : openedPcId === 'pc2' ? pc2Ip.dns : openedPcId === 'pc3' ? pc3Ip.dns : laptopIp.dns}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (openedPcId === 'pc1') setPc1Ip(prev => ({ ...prev, dns: val }));
+                          else if (openedPcId === 'pc2') setPc2Ip(prev => ({ ...prev, dns: val }));
+                          else if (openedPcId === 'pc3') setPc3Ip(prev => ({ ...prev, dns: val }));
+                          else if (openedPcId === 'laptop') setLaptopIp(prev => ({ ...prev, dns: val }));
+                        }}
+                        disabled={openedPcId !== 'laptop' && ((openedPcId === 'pc1' && pc1Ip.mode === 'dhcp') || (openedPcId === 'pc2' && pc2Ip.mode === 'dhcp') || (openedPcId === 'pc3' && pc3Ip.mode === 'dhcp'))}
+                        className="w-full bg-black border border-white/15 rounded p-2 text-xs mono font-mono"
+                        placeholder="Contoh: 8.8.8.8"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 mt-4 font-mono leading-relaxed bg-black/30 p-2 rounded">
+                    ℹ️ Konfigurasi ini disimpan otomatis secara dinamis ke simulator. Tutup dialog untuk kembali ke topologi jaringan.
+                  </p>
+                </div>
+              )}
+
+              {pcTab === 'desktop' && (
+                <div className="h-full flex flex-col bg-[#050508] border border-white/10 rounded overflow-hidden">
+                  
+                  {/* Console screen logs */}
+                  <div className="flex-1 p-4 mono text-[11px] text-[#22c55e] overflow-y-auto font-mono space-y-1">
+                    {pcPromptLogs[openedPcId].map((log, idx) => (
+                      <pre key={idx} className="whitespace-pre-wrap font-mono">{log}</pre>
+                    ))}
+                    <div ref={pcPromptBottomRef} />
+                  </div>
+
+                  {/* Console prompt form */}
+                  <form onSubmit={(e) => handlePcPromptSubmit(e, openedPcId)} className="border-t border-white/10 bg-black flex items-center shrink-0">
+                    <span className="text-[#22c55e] mono font-bold pl-3 pr-1 text-xs">C:\&gt;</span>
+                    <input 
+                      type="text"
+                      value={pcPromptInput}
+                      onChange={(e) => setPcPromptInput(e.target.value)}
+                      placeholder="Masukkan perintah... (Contoh: 'ipconfig', 'ping 192.168.1.1')"
+                      className="flex-1 bg-transparent px-2 py-2 text-white mono text-xs font-mono"
+                      autoFocus
+                    />
+                  </form>
+                </div>
+              )}
+
+              {pcTab === 'web' && (
+                <div className="h-full flex flex-col bg-slate-900 border border-white/10 rounded overflow-hidden">
+                  
+                  {/* Browser URL Input Bar */}
+                  <div className="bg-slate-800 p-2 flex gap-2 border-b border-white/15 items-center shrink-0">
+                    <span className="text-[10px] text-slate-400 font-mono">Address:</span>
+                    <input 
+                      type="text" 
+                      value={webBrowserUrl} 
+                      onChange={(e) => setWebBrowserUrl(e.target.value)}
+                      className="flex-1 bg-black text-white text-xs px-2 py-1 rounded font-mono border border-white/5" 
+                    />
+                    <button 
+                      onClick={() => playSound('click')}
+                      className="text-xs bg-[#22c55e] hover:bg-green-400 text-black px-3 py-1 font-extrabold rounded"
+                    >
+                      GO
+                    </button>
+                  </div>
+
+                  {/* Simulated web response page */}
+                  <div className="flex-1 p-6 bg-slate-950 flex flex-col justify-center items-center text-center">
+                    {connections.some(c => c.from === openedPcId || c.to === openedPcId) ? (
+                      <div className="space-y-4 max-w-sm">
+                        <Wifi className="w-12 h-12 text-[#22c55e] mx-auto animate-pulse" />
+                        <h4 className="text-lg font-bold text-white">Selamat Datang di Portal Lab TKJ!</h4>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Anda sukses tersambung ke Server Utama. IP Client Anda terdeteksi: 
+                          <strong className="text-[#22c55e] ml-1">
+                            {openedPcId === 'pc1' ? pc1Ip.ip : openedPcId === 'pc2' ? pc2Ip.ip : openedPcId === 'pc3' ? pc3Ip.ip : laptopIp.ip}
+                          </strong>
+                        </p>
+                        <div className="p-3 bg-white/5 rounded border border-white/10 text-[10px] text-[#22c55e] mono font-mono uppercase tracking-widest font-bold">
+                          HTTP STATUS 200: OK / SERVICE ONLINE
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4 max-w-sm">
+                        <ShieldAlert className="w-12 h-12 text-red-500 mx-auto" />
+                        <h4 className="text-md font-bold text-white">404: Jaringan Tidak Terjangkau</h4>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Server tidak dapat diakses. Silakan periksa kembali apakah kabel LAN dari peranti Anda sudah terhubung ke Switch Utama dengan benar.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* SUCCESS MODAL POPUP */}
+      {showSuccessModal && successModalData && (
+        <div id="success-modal-overlay" className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 font-sans">
+          <div id="success-modal-container" className="bg-[#111317] border-2 border-[#22c55e]/40 rounded-2xl p-8 max-w-lg w-full text-center relative overflow-hidden shadow-2xl shadow-green-500/10">
+            {/* Glowing background highlights */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-[#22c55e]/10 rounded-full blur-3xl pointer-events-none" />
+            
+            {/* Success Icon */}
+            <div className="mx-auto w-20 h-20 bg-green-500/10 border-2 border-[#22c55e] rounded-full flex items-center justify-center mb-6 animate-pulse">
+              <CheckCircle className="w-10 h-10 text-[#22c55e]" />
+            </div>
+            
+            <p className="text-[10px] text-[#22c55e] uppercase tracking-widest font-mono font-bold mb-1">Praktikum Berhasil Diselesaikan</p>
+            <h3 className="text-2xl font-extrabold text-white mb-2 leading-tight">
+              {successModalData.title}
+            </h3>
+            
+            {/* XP Award Badge */}
+            <div className="my-6 inline-flex items-center gap-2 bg-[#22c55e]/10 border border-[#22c55e]/20 px-6 py-2.5 rounded-full shadow-inner">
+              <span className="text-sm font-bold text-slate-300">Reward:</span>
+              <span className="text-xl font-black text-[#22c55e] font-mono tracking-wide">+{successModalData.xpReward} XP</span>
+            </div>
+
+            {/* Congratulatory message */}
+            <p className="text-xs text-slate-400 max-w-sm mx-auto mb-8 leading-relaxed">
+              Luar biasa! Anda telah berhasil menyelesaikan semua tugas operasional untuk modul simulasi ini dengan sempurna. Kemampuan Anda dalam manajemen infrastruktur jaringan SMK TKJ terus meningkat!
+            </p>
+
+            {/* Action buttons */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+              <button
+                id="btn-lobby"
+                onClick={() => {
+                  playSound('click');
+                  setShowSuccessModal(false);
+                  setCurrentScreen('lobby');
+                }}
+                className="w-full sm:w-auto px-6 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Kembali ke Lobby
+              </button>
+              
+              {successModalData.id < MISSIONS_DATA.length ? (
+                <button
+                  id="btn-next-mission"
+                  onClick={handleNextMission}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-[#22c55e] hover:bg-[#1ebd53] text-black font-extrabold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 cursor-pointer"
+                >
+                  Lanjut ke Misi Berikutnya <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  id="btn-finished-all"
+                  onClick={() => {
+                    playSound('success');
+                    setShowSuccessModal(false);
+                    setCurrentScreen('lobby');
+                  }}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black font-extrabold rounded-xl text-xs transition-all shadow-lg shadow-yellow-500/20 cursor-pointer"
+                >
+                  🏆 Selesai Semua Misi!
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FOOTER BAR */}
+      <footer className="h-8 bg-[#15171b] border-t border-white/10 px-4 flex items-center justify-between text-[9px] text-slate-500 mono shrink-0 font-mono z-10">
+        <div className="flex items-center gap-6">
+          <span>LAB_SESSION_ID: GJ-SMK-2026</span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-[#22c55e] rounded-full server-led" /> INTERNET GATEWAY DETECTED
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-[#22c55e] rounded-full server-led" /> DATABASE CONNECTED
+          </span>
+        </div>
+        <div>
+          <span>© 2026 GAMEJAR NETWORK ACADEMY // INDONESIA</span>
+        </div>
+      </footer>
+
+    </div>
+  );
+}
