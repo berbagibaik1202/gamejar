@@ -32,11 +32,12 @@ const MISSIONS_DATA: Mission[] = [
     code: 'M01',
     title: 'Konektivitas Dasar',
     subtitle: 'Kabel UTP & IP Address',
-    description: 'PC Client-1 tidak bisa terhubung ke Jaringan Utama. Kabel UTP belum terpasang dan IP Address PC belum dikonfigurasikan. Hubungkan PC-1 ke port Fa0/1 Switch dan konfigurasikan IP Statis.',
+    description: 'PC Client-1 tidak bisa terhubung ke Jaringan Utama. Kabel UTP belum di-crimping dengan benar, belum terpasang, dan IP Address PC belum dikonfigurasikan. Lakukan crimping kabel T568B Straight, hubungkan PC-1 ke port Fa0/1 Switch dan atur IP Statis.',
     difficulty: 'Mudah',
     xpReward: 1000,
-    technicalGuide: '1. Pasang kabel LAN (UTP) dari PC-1 (FastEthernet0) ke Switch (Fa0/1).\n2. Atur IP PC-1: 192.168.1.2, Netmask: 255.255.255.0, Gateway: 192.168.1.1.\n3. Masuk ke Command Prompt PC-1, lakukan "ping 192.168.1.1".',
+    technicalGuide: '1. Klik tombol "Crimping UTP" di panel Misi untuk merakit kabel Straight-Through (T568B).\n2. Pasang kabel LAN (UTP) dari PC-1 (FastEthernet0) ke Switch (Fa0/1).\n3. Atur IP PC-1: 192.168.1.2, Netmask: 255.255.255.0, Gateway: 192.168.1.1.\n4. Masuk ke Command Prompt PC-1, lakukan "ping 192.168.1.1".',
     objectives: [
+      { id: 'm1_crimping', text: 'Lakukan Crimping Kabel UTP T568B (Straight-Through) dengan benar', completed: false },
       { id: 'm1_cable', text: 'Hubungkan PC-1 ke Switch Port Fa0/1 dengan Kabel UTP', completed: false },
       { id: 'm1_ip', text: 'Atur IP Statis PC-1 ke 192.168.1.2 / Gateway 192.168.1.1', completed: false },
       { id: 'm1_ping', text: 'Uji konektivitas dengan "ping 192.168.1.1" dari PC-1', completed: false }
@@ -102,6 +103,31 @@ const MISSIONS_DATA: Mission[] = [
     ]
   }
 ];
+
+// ============================================================================
+// UTP CRIMPING CONSTANTS & VISUAL STYLING
+// ============================================================================
+const CRIMP_COLORS = [
+  'Putih-Oranye',
+  'Oranye',
+  'Putih-Hijau',
+  'Biru',
+  'Putih-Biru',
+  'Hijau',
+  'Putih-Cokelat',
+  'Cokelat'
+];
+
+const WIRE_STYLES: { [key: string]: string } = {
+  'Putih-Oranye': 'bg-gradient-to-r from-orange-500 via-slate-100 to-orange-500 border border-orange-500/30 text-slate-900',
+  'Oranye': 'bg-orange-500 border border-orange-600 text-white',
+  'Putih-Hijau': 'bg-gradient-to-r from-green-500 via-slate-100 to-green-500 border border-green-500/30 text-slate-900',
+  'Biru': 'bg-blue-600 border border-blue-700 text-white',
+  'Putih-Biru': 'bg-gradient-to-r from-blue-600 via-slate-100 to-blue-600 border border-blue-500/30 text-slate-900',
+  'Hijau': 'bg-green-600 border border-green-700 text-white',
+  'Putih-Cokelat': 'bg-gradient-to-r from-amber-800 via-slate-100 to-amber-800 border border-amber-800/30 text-slate-900',
+  'Cokelat': 'bg-amber-900 border border-amber-950 text-white'
+};
 
 // ============================================================================
 // APP ENTRY POINT
@@ -227,6 +253,16 @@ export default function App() {
   });
   const [switchCreatedVlans, setSwitchCreatedVlans] = useState<number[]>([1]);
 
+  // Terminal Collapse state
+  const [isTerminalCollapsed, setIsTerminalCollapsed] = useState<boolean>(true);
+
+  // UTP Crimping Mini-game states
+  const [isCrimpingOpen, setIsCrimpingOpen] = useState<boolean>(false);
+  const [crimpPins, setCrimpPins] = useState<string[]>(['', '', '', '', '', '', '', '']);
+  const [selectedWireColor, setSelectedWireColor] = useState<string | null>(null);
+  const [isCrimpingSuccess, setIsCrimpingSuccess] = useState<boolean>(false);
+  const [crimpingError, setCrimpingError] = useState<string | null>(null);
+
   // Draggable Connections Widget states
   const [connectionsWidgetPos, setConnectionsWidgetPos] = useState({ x: 16, y: 16 }); // offset from right: 16px, top: 16px
   const [isDraggingConnections, setIsDraggingConnections] = useState(false);
@@ -286,6 +322,15 @@ export default function App() {
       setCurrentCliTarget('router');
     }
   }, [openedRouterId]);
+
+  // Synchronize terminal collapse state when cli target changes
+  useEffect(() => {
+    if (currentCliTarget) {
+      setIsTerminalCollapsed(false);
+    } else {
+      setIsTerminalCollapsed(true);
+    }
+  }, [currentCliTarget]);
 
   // Router config state
   const [routerDhcpPool, setRouterDhcpPool] = useState({ active: false, network: '', gateway: '' });
@@ -355,6 +400,9 @@ export default function App() {
     setRouterDhcpPool({ active: false, network: '', gateway: '' });
     setRouterAcl([]);
     setRouterAclApplied(null);
+    setCrimpPins(['', '', '', '', '', '', '', '']);
+    setSelectedWireColor(null);
+    setIsCrimpingSuccess(false);
 
     // Initial terminal logs
     const initialLogs = [
@@ -484,24 +532,32 @@ export default function App() {
 
     // Mission 1: Konektivitas Dasar
     if (activeMission.id === 1) {
+      // Obj 0: Crimping UTP T568B
+      const isCrimped = isCrimpingSuccess;
+      const crimpObj = updatedObjectives.find(o => o.id === 'm1_crimping');
+      if (crimpObj && crimpObj.completed !== isCrimped) {
+        crimpObj.completed = isCrimped;
+        stateChanged = true;
+      }
+
       // Obj 1: PC-1 to Switch port Fa0/1 UTP
       const hasCable = connections.some(c => 
         ((c.from === 'pc1' && c.to === 'switch' && c.toPort === 'Fa0/1') || 
          (c.to === 'pc1' && c.from === 'switch' && c.fromPort === 'Fa0/1')) && c.type === 'utp'
       );
-      if (hasCable !== updatedObjectives[0].completed) {
-        updatedObjectives[0].completed = hasCable;
+      const cableObj = updatedObjectives.find(o => o.id === 'm1_cable');
+      if (cableObj && cableObj.completed !== hasCable) {
+        cableObj.completed = hasCable;
         stateChanged = true;
       }
 
       // Obj 2: Config IP PC-1
       const isIpSet = pc1Ip.ip === '192.168.1.2' && pc1Ip.mask === '255.255.255.0' && pc1Ip.gw === '192.168.1.1';
-      if (isIpSet !== updatedObjectives[1].completed) {
-        updatedObjectives[1].completed = isIpSet;
+      const ipObj = updatedObjectives.find(o => o.id === 'm1_ip');
+      if (ipObj && ipObj.completed !== isIpSet) {
+        ipObj.completed = isIpSet;
         stateChanged = true;
       }
-
-      // Obj 3 will be set completed upon successful typing of ping in command prompt
     }
 
     // Mission 2: IP Conflict
@@ -599,8 +655,8 @@ export default function App() {
           // If this objective is managed by the validator for this mission, update it.
           // Otherwise, preserve its current state in prev.
           let shouldUpdate = false;
-          if (prev.id === 1 && (i === 0 || i === 1)) shouldUpdate = true;
-          if (prev.id === 2 && i === 0) shouldUpdate = true;
+          if (prev.id === 1 && (obj.id === 'm1_crimping' || obj.id === 'm1_cable' || obj.id === 'm1_ip')) shouldUpdate = true;
+          if (prev.id === 2 && obj.id === 'm2_change_ip') shouldUpdate = true;
           if (prev.id === 3) shouldUpdate = true;
           if (prev.id === 4) shouldUpdate = true;
           if (prev.id === 5) shouldUpdate = true;
@@ -659,11 +715,105 @@ export default function App() {
   }, [activeMission, completedMissions, xp, unlockedMissions]);
 
   // ============================================================================
+  // UTP CABLE CRIMPING ACTIONS
+  // ============================================================================
+  const handleSelectWire = (color: string) => {
+    playSound('click');
+    setSelectedWireColor(color);
+  };
+
+  const handleSlotClick = (slotIdx: number) => {
+    playSound('click');
+    setCrimpingError(null);
+    if (!selectedWireColor) {
+      // If no wire selected, click to clear current wire from slot
+      const existingColor = crimpPins[slotIdx];
+      if (existingColor) {
+        const nextPins = [...crimpPins];
+        nextPins[slotIdx] = '';
+        setCrimpPins(nextPins);
+      }
+      return;
+    }
+
+    // Assign selected wire to this slot
+    const nextPins = [...crimpPins];
+    
+    // If the selected wire was already in another slot, clear that slot first
+    const existingIndex = crimpPins.indexOf(selectedWireColor);
+    if (existingIndex !== -1) {
+      nextPins[existingIndex] = '';
+    }
+
+    // Place selected wire in slot
+    nextPins[slotIdx] = selectedWireColor;
+    setCrimpPins(nextPins);
+    setSelectedWireColor(null); // Deselect after placing
+  };
+
+  const handleVerifyCrimping = () => {
+    // Standard T568B Straight order
+    const correctOrder = [
+      'Putih-Oranye',
+      'Oranye',
+      'Putih-Hijau',
+      'Biru',
+      'Putih-Biru',
+      'Hijau',
+      'Putih-Cokelat',
+      'Cokelat'
+    ];
+
+    // Check if any slot is still empty
+    if (crimpPins.some(pin => !pin)) {
+      playSound('fail');
+      setCrimpingError('Semua 8 PIN kawat RJ-45 harus terpasang kawat sebelum di-crimp!');
+      return;
+    }
+
+    const isMatch = crimpPins.every((val, idx) => val === correctOrder[idx]);
+
+    if (isMatch) {
+      playSound('success');
+      setIsCrimpingSuccess(true);
+      setCrimpingError(null);
+      setTerminalLogs(prev => [
+        ...prev,
+        `✨ [CRIMPING] Crimping kabel UTP berhasil! Susunan warna T568B Straight sempurna.`,
+        `👉 Sekarang hubungkan PC-1 (Eth0) ke Switch (Fa0/1) menggunakan kabel UTP yang baru selesai di-crimp!`
+      ]);
+      // Update active mission state
+      setActiveMission(prev => {
+        if (prev?.id === 1) {
+          const updated = prev.objectives.map(o => o.id === 'm1_crimping' ? { ...o, completed: true } : o);
+          return { ...prev, objectives: updated };
+        }
+        return prev;
+      });
+    } else {
+      playSound('fail');
+      setIsCrimpingSuccess(false);
+      setCrimpingError('Susunan kawat salah! Harap periksa kembali urutan pin standar T568B Straight.');
+    }
+  };
+
+  // ============================================================================
   // INTERACTIVE CABLING ENGINE
   // ============================================================================
   const handlePortClick = (device: string, port: string) => {
     playSound('click');
     if (!selectedTool) return;
+
+    if (selectedTool === 'utp' && activeMission?.id === 1 && !isCrimpingSuccess) {
+      playSound('fail');
+      setTerminalLogs(prev => [
+        ...prev, 
+        `⚠️ [CABLING] Gagal! Kabel UTP belum di-crimping dengan benar. Silakan selesaikan tugas "Crimping UTP" di panel Misi sebelah kiri untuk merakit susunan warna kabel T568B Straight.`
+      ]);
+      setSelectedTool(null);
+      setWireStartNode(null);
+      return;
+    }
 
     if (!wireStartNode) {
       // Start connection
@@ -984,13 +1134,11 @@ IP Configuration:
             // Trigger Mission progress
             setActiveMission(prev => {
               if (prev?.id === 1 && pcId === 'pc1' && pc1Ip.ip === '192.168.1.2') {
-                const updated = prev.objectives.map(o => ({ ...o }));
-                updated[2].completed = true;
+                const updated = prev.objectives.map(o => o.id === 'm1_ping' ? { ...o, completed: true } : o);
                 return { ...prev, objectives: updated };
               }
               if (prev?.id === 2 && pcId === 'pc3' && pc3Ip.ip === '192.168.1.11') {
-                const updated = prev.objectives.map(o => ({ ...o }));
-                updated[1].completed = true;
+                const updated = prev.objectives.map(o => o.id === 'm2_ping' ? { ...o, completed: true } : o);
                 return { ...prev, objectives: updated };
               }
               return prev;
@@ -1240,6 +1388,29 @@ IP Configuration:
                     ))}
                   </div>
 
+                  {/* Crimping Shortcut Button for Mission 1 */}
+                  {activeMission.id === 1 && (
+                    <div className="mt-4 p-3 bg-yellow-500/5 rounded-xl border border-yellow-500/20">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-[9px] font-bold text-yellow-500 uppercase tracking-widest">Pekerjaan Tambahan</span>
+                        <span className="text-[8px] bg-yellow-500/10 text-yellow-500 px-1.5 py-0.5 rounded font-mono">CCNA / TKJ</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mb-2 leading-relaxed">
+                        Crimping kabel UTP Straight-Through dengan susunan pin standar <strong>T568B</strong>.
+                      </p>
+                      <button
+                        onClick={() => { playSound('click'); setIsCrimpingOpen(true); }}
+                        className={`w-full py-2 px-3 text-xs font-bold font-mono rounded-lg transition-all flex items-center justify-center gap-2 border cursor-pointer ${
+                          isCrimpingSuccess 
+                            ? 'bg-green-500/10 border-green-500/25 text-green-400 hover:bg-green-500/20' 
+                            : 'bg-yellow-500/10 border-yellow-500/25 text-yellow-500 hover:bg-yellow-500/20 animate-pulse'
+                        }`}
+                      >
+                        🔧 {isCrimpingSuccess ? 'Ubah Crimping (Sudah Sukses)' : 'Mulai Crimping UTP Straight'}
+                      </button>
+                    </div>
+                  )}
+
                   {activeMission.objectives.every(o => o.completed) && (
                     <div className="mt-4 pt-4 border-t border-white/5">
                       <button
@@ -1318,10 +1489,23 @@ IP Configuration:
                       <span className="text-[8px] mono text-slate-600">SFP</span>
                     </div>
 
-                    <div className="aspect-square bg-slate-800/30 rounded border border-white/5 flex flex-col items-center justify-center opacity-30 cursor-not-allowed">
-                      <Database className="w-5 h-5 text-slate-600" />
-                      <span className="text-[8px] mono text-slate-600">Fiber</span>
-                    </div>
+                    {activeMission?.id === 1 ? (
+                      <button 
+                        onClick={() => { playSound('click'); setIsCrimpingOpen(true); }}
+                        className={`aspect-square rounded border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                          isCrimpingSuccess ? 'bg-green-500/10 border-green-500/35 text-green-400' : 'bg-yellow-500/15 border-yellow-500/40 text-yellow-400 animate-pulse'
+                        }`}
+                        title="Alat Crimping UTP"
+                      >
+                        <Network className={`w-5 h-5 ${isCrimpingSuccess ? 'text-green-400' : 'text-yellow-400'}`} />
+                        <span className="text-[7.5px] mono font-bold uppercase">Crimp</span>
+                      </button>
+                    ) : (
+                      <div className="aspect-square bg-slate-800/30 rounded border border-white/5 flex flex-col items-center justify-center opacity-30 cursor-not-allowed">
+                        <Database className="w-5 h-5 text-slate-600" />
+                        <span className="text-[8px] mono text-slate-600">Fiber</span>
+                      </div>
+                    )}
                   </div>
                   {selectedTool && (
                     <p className="text-[10px] text-yellow-500 mt-2 animate-pulse font-mono">
@@ -1365,10 +1549,10 @@ IP Configuration:
             </div>
 
             {/* INTERACTIVE NETWORK MAP AREA */}
-            <div className="flex-1 p-6 relative flex items-center justify-center overflow-auto">
+            <div className="flex-1 p-6 relative flex flex-col overflow-auto">
               
               {/* Device Topology Graph */}
-              <div className="grid grid-cols-4 gap-x-12 gap-y-8 w-full max-w-4xl relative z-10">
+              <div className="grid grid-cols-4 gap-x-12 gap-y-8 w-full max-w-4xl m-auto relative z-10">
                 
                 {/* LINE 1: ROUTER & INTERNET */}
                 <div className="col-span-1"></div>
@@ -1651,47 +1835,62 @@ IP Configuration:
             </div>
 
             {/* LOWER TERMINAL: INTERACTIVE SW/ROUTER CLI CONSOLE */}
-            <div className="h-52 border-t border-white/10 bg-[#0a0b0e] flex flex-col shrink-0">
+            <div className={`border-t border-white/10 bg-[#0a0b0e] flex flex-col shrink-0 transition-all duration-300 ${
+              isTerminalCollapsed ? 'h-9' : 'h-52'
+            }`}>
               
               {/* Terminal Connection Bar */}
-              <div className="px-4 py-1.5 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
+              <div 
+                className="px-4 py-1.5 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0 select-none cursor-pointer" 
+                onClick={() => setIsTerminalCollapsed(!isTerminalCollapsed)}
+              >
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-[#22c55e] rounded-full server-led" />
+                  <span className={`w-2 h-2 ${currentCliTarget ? 'bg-[#22c55e] server-led' : 'bg-slate-600'} rounded-full`} />
                   <span className="mono text-[10px] text-slate-400 uppercase tracking-wide">
                     {currentCliTarget 
                       ? `Koneksi CLI Aktif: ${currentCliTarget.toUpperCase()}# (Tipe: Cisco IOS)` 
-                      : 'PILIH PERANGKAT (SWITCH/ROUTER) UNTUK MEMBUKA CLI CONSOLE'}
+                      : 'Terminal CLI Console'}
                   </span>
                 </div>
-                {currentCliTarget && (
-                  <button 
-                    onClick={() => { playSound('click'); setCurrentCliTarget(null); }}
-                    className="text-[9px] bg-red-950/40 hover:bg-red-900/40 text-red-400 px-2 py-0.5 rounded border border-red-500/20"
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  {currentCliTarget && (
+                    <button 
+                      onClick={() => { playSound('click'); setCurrentCliTarget(null); }}
+                      className="text-[9px] bg-red-950/40 hover:bg-red-900/40 text-red-400 px-2 py-0.5 rounded border border-red-500/20 mr-1"
+                    >
+                      Tutup CLI
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { playSound('click'); setIsTerminalCollapsed(!isTerminalCollapsed); }}
+                    className="text-[9px] bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white px-2 py-0.5 rounded border border-white/5 flex items-center gap-1 font-mono"
                   >
-                    Tutup CLI
+                    {isTerminalCollapsed ? '▲ BUKA TERMINAL' : '▼ SEMBUNYIKAN'}
                   </button>
-                )}
+                </div>
               </div>
 
               {/* Terminal Output Logs */}
-              <div className="flex-1 p-4 mono text-xs text-green-400 overflow-y-auto leading-relaxed font-mono">
-                {terminalLogs.length === 0 ? (
-                  <div className="text-slate-500 flex flex-col items-center justify-center h-full gap-2">
-                    <TerminalIcon className="w-8 h-8 opacity-40 animate-pulse" />
-                    <p className="text-[11px] text-center">Silakan klik tombol "CLI SWITCH" atau "CLI ROUTER" pada peranti jaringan di atas untuk mengaktifkan terminal konfigurasi.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {terminalLogs.map((log, idx) => (
-                      <pre key={idx} className="whitespace-pre-wrap font-mono break-all">{log}</pre>
-                    ))}
-                    <div ref={terminalBottomRef} />
-                  </div>
-                )}
-              </div>
+              {!isTerminalCollapsed && (
+                <div className="flex-1 p-4 mono text-xs text-green-400 overflow-y-auto leading-relaxed font-mono">
+                  {terminalLogs.length === 0 ? (
+                    <div className="text-slate-500 flex flex-col items-center justify-center h-full gap-2">
+                      <TerminalIcon className="w-8 h-8 opacity-40 animate-pulse" />
+                      <p className="text-[11px] text-center">Silakan klik tombol "CLI SWITCH" atau "CLI ROUTER" pada peranti jaringan di atas untuk mengaktifkan terminal konfigurasi.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {terminalLogs.map((log, idx) => (
+                        <pre key={idx} className="whitespace-pre-wrap font-mono break-all">{log}</pre>
+                      ))}
+                      <div ref={terminalBottomRef} />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Terminal Input Box */}
-              {currentCliTarget && (
+              {!isTerminalCollapsed && currentCliTarget && (
                 <form onSubmit={handleCliSubmit} className="border-t border-white/10 bg-black flex items-center shrink-0">
                   <span className="text-green-500 mono font-bold pl-4 pr-1 text-xs">{currentCliTarget === 'switch' ? 'Switch' : 'Router'}#</span>
                   <input 
@@ -2718,6 +2917,203 @@ IP Configuration:
               >
                 Selesai & Simpan
               </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* UTP CRIMPING LAB MODAL OVERLAY */}
+      {isCrimpingOpen && (
+        <div id="crimping-modal-overlay" className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div id="crimping-modal-container" className="bg-[#0e1115] border border-yellow-500/30 rounded-2xl p-6 max-w-4xl w-full text-slate-300 relative shadow-2xl shadow-yellow-500/5 flex flex-col md:flex-row gap-6">
+            
+            {/* Close Button */}
+            <button 
+              onClick={() => { playSound('click'); setIsCrimpingOpen(false); }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors cursor-pointer text-xl font-bold font-mono p-1"
+            >
+              ✕
+            </button>
+
+            {/* Left Column: Interactive RJ45 Plug */}
+            <div className="flex-1 flex flex-col items-center justify-center bg-black/40 rounded-xl p-5 border border-white/5">
+              <h3 className="text-sm font-extrabold text-white mb-2 uppercase tracking-wide flex items-center gap-2">
+                <Network className="w-4 h-4 text-yellow-500" />
+                Soket RJ-45 & Kawat Pin
+              </h3>
+              <p className="text-[10px] text-slate-500 mb-6 text-center leading-relaxed">
+                Urutan Pin 1 (Kiri) sampai Pin 8 (Kanan). Klik Slot untuk menaruh kawat. Klik kawat terpasang untuk melepasnya kembali.
+              </p>
+
+              {/* RJ-45 Connector Mockup Illustration */}
+              <div className="relative w-72 h-80 bg-slate-800/10 border border-slate-700/50 rounded-2xl flex flex-col justify-between p-4 overflow-hidden">
+                {/* Copper Contacts */}
+                <div className="grid grid-cols-8 gap-1 px-3">
+                  {[...Array(8)].map((_, i) => (
+                    <div key={i} className="flex flex-col items-center">
+                      <span className="text-[9px] text-slate-400 font-mono font-bold mb-1">{i+1}</span>
+                      <div className="w-4 h-3 bg-yellow-600 rounded-t border-b border-yellow-700 flex items-center justify-center">
+                        <div className="w-0.5 h-full bg-yellow-300" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Vertical tracks inside the plug */}
+                <div className="grid grid-cols-8 gap-1 px-2 h-52 bg-[#12141a]/80 rounded-xl p-1.5 relative">
+                  {[...Array(8)].map((_, i) => {
+                    const assignedColor = crimpPins[i];
+                    return (
+                      <div 
+                        key={i} 
+                        onClick={() => handleSlotClick(i)}
+                        className={`group relative flex flex-col items-center justify-end h-full rounded cursor-pointer transition-all ${
+                          assignedColor 
+                            ? WIRE_STYLES[assignedColor] 
+                            : 'bg-slate-900/50 border border-dashed border-white/10 hover:border-yellow-500/40 hover:bg-yellow-500/5'
+                        }`}
+                        title={assignedColor ? `Pin ${i+1}: ${assignedColor}` : `Pin ${i+1}: Klik untuk pasang kawat`}
+                      >
+                        {assignedColor ? (
+                          <>
+                            {/* Inner stripe effect */}
+                            <div className="w-full h-full flex flex-col justify-end pb-1 overflow-hidden rounded-sm">
+                              <span className="text-[6.5px] font-black text-center select-none font-mono tracking-tighter drop-shadow-md">
+                                {assignedColor.substring(0, 2)}
+                              </span>
+                            </div>
+                            {/* Clear indicator */}
+                            <span className="absolute inset-0 bg-red-600/0 hover:bg-red-600/25 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 text-[10px] rounded transition-all">
+                              ✕
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-[8px] text-slate-600 font-mono font-bold mb-2 select-none group-hover:text-yellow-500">
+                            +
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* RJ-45 Tab Click Lock */}
+                <div className="w-20 h-8 bg-slate-700/20 border border-slate-600/30 rounded-b-lg mx-auto flex items-center justify-center">
+                  <div className="w-14 h-3 bg-slate-700/40 border border-slate-600 rounded-sm" />
+                </div>
+              </div>
+
+              {/* Selection State Indicator */}
+              <div className="mt-4 w-full text-center">
+                {selectedWireColor ? (
+                  <div className="inline-flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 px-3 py-1.5 rounded-full text-[11px] text-yellow-400">
+                    <span className="w-2 h-2 rounded-full bg-yellow-500 animate-ping" />
+                    Kawat Terpilih: <strong>{selectedWireColor}</strong>. Klik Slot Pin RJ-45 untuk memasang.
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-400 font-medium">
+                    💡 Pilih salah satu kawat warna di samping, lalu klik salah satu Pin RJ-45 di atas.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Reference & Actions */}
+            <div className="w-full md:w-96 flex flex-col justify-between bg-black/20 rounded-xl p-5 border border-white/5">
+              <div>
+                <h3 className="text-sm font-extrabold text-white mb-2 uppercase tracking-wide flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-yellow-500" />
+                  Standar T568B Straight
+                </h3>
+                
+                {/* Standard Color Cheat Sheet */}
+                <div className="grid grid-cols-2 gap-2 p-3 bg-[#0a0c10] border border-white/5 rounded-xl text-[10px] font-mono leading-relaxed mb-4">
+                  <div>
+                    <p className="text-yellow-500 font-bold mb-1 border-b border-white/5 pb-0.5">PIN 1 - 4</p>
+                    <p className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-orange-400" /> 1. Putih-Oranye</p>
+                    <p className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-orange-500" /> 2. Oranye</p>
+                    <p className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400" /> 3. Putih-Hijau</p>
+                    <p className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> 4. Biru</p>
+                  </div>
+                  <div>
+                    <p className="text-yellow-500 font-bold mb-1 border-b border-white/5 pb-0.5">PIN 5 - 8</p>
+                    <p className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" /> 5. Putih-Biru</p>
+                    <p className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-600" /> 6. Hijau</p>
+                    <p className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-800" /> 7. Putih-Cokelat</p>
+                    <p className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-900" /> 8. Cokelat</p>
+                  </div>
+                </div>
+
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 font-sans">Kawat Kabel UTP</h3>
+                
+                {/* Available Wire Wires */}
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {CRIMP_COLORS.map((color) => {
+                    const isPlaced = crimpPins.includes(color);
+                    return (
+                      <button
+                        key={color}
+                        onClick={() => handleSelectWire(color)}
+                        disabled={isPlaced && selectedWireColor !== color}
+                        className={`p-2 rounded-lg text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border ${
+                          selectedWireColor === color 
+                            ? 'ring-2 ring-yellow-400 border-yellow-400 scale-[1.02] shadow-md shadow-yellow-400/10' 
+                            : 'border-white/5 hover:border-white/15'
+                        } ${
+                          isPlaced 
+                            ? 'opacity-30 bg-slate-900 text-slate-500 border-transparent cursor-not-allowed' 
+                            : 'bg-[#15171b] hover:bg-[#1a1e26] text-slate-200'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 font-mono text-[10px]">
+                          <span className={`w-3 h-3 rounded ${WIRE_STYLES[color]}`} />
+                          {color}
+                        </span>
+                        {!isPlaced && (
+                          <span className="text-[8px] bg-white/5 text-slate-400 px-1 rounded">Pilih</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Status and Action Buttons */}
+              <div className="pt-4 border-t border-white/5 mt-auto">
+                {isCrimpingSuccess ? (
+                  <div className="mb-3 p-3 bg-green-500/10 border border-green-500/20 rounded-xl text-center text-xs text-green-400 font-medium">
+                    🎉 Crimping Sukses! Kabel Straight T568B Anda sempurna. Sekarang Anda bisa memasangnya ke topologi.
+                  </div>
+                ) : crimpingError ? (
+                  <div className="mb-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-center text-xs text-red-400 font-medium font-mono">
+                    ⚠️ {crimpingError}
+                  </div>
+                ) : null}
+
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => {
+                      playSound('click');
+                      setCrimpPins(['', '', '', '', '', '', '', '']);
+                      setSelectedWireColor(null);
+                      setCrimpingError(null);
+                      setIsCrimpingSuccess(false);
+                    }}
+                    className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs rounded-xl border border-white/10 transition-colors cursor-pointer font-mono"
+                  >
+                    RESET
+                  </button>
+                  <button
+                    onClick={handleVerifyCrimping}
+                    disabled={isCrimpingSuccess}
+                    className="flex-2 py-2.5 bg-yellow-500 hover:bg-yellow-400 disabled:bg-slate-800 disabled:text-slate-600 text-black font-extrabold text-xs rounded-xl tracking-wider transition-all cursor-pointer font-mono shadow-lg shadow-yellow-500/15"
+                  >
+                    CRIMP KABEL!
+                  </button>
+                </div>
+              </div>
+
             </div>
 
           </div>
