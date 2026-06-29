@@ -197,6 +197,21 @@ export default function App() {
   // PC Interface overlays
   const [openedPcId, setOpenedPcId] = useState<'pc1' | 'pc2' | 'pc3' | 'laptop' | null>(null);
   const [pcTab, setPcTab] = useState<'config' | 'desktop' | 'web'>('config');
+  
+  // Switch & Router Dialog overlays
+  const [openedSwitchId, setOpenedSwitchId] = useState<boolean>(false);
+  const [openedRouterId, setOpenedRouterId] = useState<boolean>(false);
+  const [switchTab, setSwitchTab] = useState<'vlan' | 'cli'>('vlan');
+  const [routerTab, setRouterTab] = useState<'dhcp' | 'acl' | 'cli'>('dhcp');
+  
+  // Visual config input states
+  const [vlanIdInput, setVlanIdInput] = useState('');
+  const [vlanNameInput, setVlanNameInput] = useState('');
+  const [dhcpPoolNameInput, setDhcpPoolNameInput] = useState('LAB-TKJ');
+  const [dhcpNetworkInput, setDhcpNetworkInput] = useState('192.168.1.0');
+  const [dhcpGatewayInput, setDhcpGatewayInput] = useState('192.168.1.1');
+  const [aclSourceInput, setAclSourceInput] = useState('10.10.10.50');
+  const [aclDestInput, setAclDestInput] = useState('192.168.1.100');
   const [pcPromptLogs, setPcPromptLogs] = useState<{ [key: string]: string[] }>({
     pc1: ['GAMEJar Client Console v1.0', 'Ketik "help" untuk melihat daftar perintah.', ''],
     pc2: ['GAMEJar Client Console v1.0', 'Ketik "help" untuk melihat daftar perintah.', ''],
@@ -1300,8 +1315,9 @@ IP Configuration:
                 
                 {/* Router Card */}
                 <div 
-                  className={`col-span-2 p-3 bg-[#15171b] border rounded-xl flex flex-col relative transition-all ${
-                    currentCliTarget === 'router' ? 'border-[#22c55e] ring-2 ring-[#22c55e]/10' : 'border-white/10 hover:border-white/20'
+                  onClick={() => { playSound('click'); setOpenedRouterId(true); setRouterTab('dhcp'); }}
+                  className={`col-span-2 p-3 bg-[#15171b] border rounded-xl flex flex-col relative cursor-pointer transition-all ${
+                    openedRouterId || currentCliTarget === 'router' ? 'border-[#22c55e] ring-2 ring-[#22c55e]/10 bg-[#191c22]' : 'border-white/10 hover:border-white/20'
                   }`}
                 >
                   <div className="flex justify-between items-center mb-2">
@@ -1315,7 +1331,7 @@ IP Configuration:
                   {/* Ports list */}
                   <div className="flex gap-2 mb-2">
                     <button 
-                      onClick={() => handlePortClick('router', 'Gi0/0')}
+                      onClick={(e) => { e.stopPropagation(); handlePortClick('router', 'Gi0/0'); }}
                       className={`text-[9px] font-mono px-2 py-1 rounded flex items-center gap-1 border transition-all ${
                         connections.some(c => (c.from === 'router' && c.fromPort === 'Gi0/0') || (c.to === 'router' && c.toPort === 'Gi0/0'))
                           ? 'bg-green-950/40 border-green-500/40 text-green-400'
@@ -1326,7 +1342,7 @@ IP Configuration:
                       Gi0/0
                     </button>
                     <button 
-                      onClick={() => handlePortClick('router', 'Console')}
+                      onClick={(e) => { e.stopPropagation(); handlePortClick('router', 'Console'); }}
                       className={`text-[9px] font-mono px-2 py-1 rounded flex items-center gap-1 border transition-all ${
                         connections.some(c => (c.from === 'router' && c.fromPort === 'Console') || (c.to === 'router' && c.toPort === 'Console'))
                           ? 'bg-blue-950/40 border-blue-500/40 text-blue-400'
@@ -1337,9 +1353,10 @@ IP Configuration:
                     </button>
                   </div>
 
-                  <div className="flex justify-end gap-1">
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-[7px] text-[#22c55e] uppercase tracking-wider font-mono font-bold animate-pulse">⚙️ KLIK UNTUK CONFIG</span>
                     <button 
-                      onClick={() => { playSound('click'); setCurrentCliTarget('router'); }}
+                      onClick={(e) => { e.stopPropagation(); playSound('click'); setOpenedRouterId(true); setRouterTab('cli'); }}
                       className="text-[9px] bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20 px-2 py-0.5 rounded hover:bg-[#22c55e] hover:text-black font-mono"
                     >
                       CLI CONSOLE
@@ -1354,7 +1371,12 @@ IP Configuration:
                 </div>
 
                 {/* LINE 2: SWITCH */}
-                <div className="col-span-4 p-4 bg-[#15171b] border border-white/10 rounded-xl flex flex-col">
+                <div 
+                  onClick={() => { playSound('click'); setOpenedSwitchId(true); setSwitchTab('vlan'); }}
+                  className={`col-span-4 p-4 bg-[#15171b] border rounded-xl flex flex-col cursor-pointer transition-all ${
+                    openedSwitchId || currentCliTarget === 'switch' ? 'border-[#22c55e] ring-2 ring-[#22c55e]/10 bg-[#191c22]' : 'border-white/10 hover:border-white/20'
+                  }`}
+                >
                   <div className="flex justify-between items-center mb-3">
                     <div className="flex items-center gap-2">
                       <Server className="w-4 h-4 text-slate-400" />
@@ -1372,7 +1394,7 @@ IP Configuration:
                       return (
                         <button 
                           key={port}
-                          onClick={() => handlePortClick('switch', port)}
+                          onClick={(e) => { e.stopPropagation(); handlePortClick('switch', port); }}
                           className={`p-2 border rounded bg-black flex flex-col items-center transition-all ${
                             isConnected ? 'border-green-500/40 text-green-400' : 'border-white/10 text-slate-500 hover:text-white'
                           }`}
@@ -1387,7 +1409,7 @@ IP Configuration:
 
                   <div className="flex justify-between items-center">
                     <button 
-                      onClick={() => handlePortClick('switch', 'Console')}
+                      onClick={(e) => { e.stopPropagation(); handlePortClick('switch', 'Console'); }}
                       className={`text-[9px] font-mono px-2 py-1 rounded border ${
                         connections.some(c => (c.from === 'switch' && c.fromPort === 'Console') || (c.to === 'switch' && c.toPort === 'Console'))
                           ? 'bg-blue-950/40 border-blue-500/40 text-blue-400'
@@ -1397,8 +1419,10 @@ IP Configuration:
                       Console Port
                     </button>
                     
+                    <span className="text-[7px] text-[#22c55e] uppercase tracking-wider font-mono font-bold animate-pulse">⚙️ KLIK UNTUK KELOLA VLAN / PORT</span>
+                    
                     <button 
-                      onClick={() => { playSound('click'); setCurrentCliTarget('switch'); }}
+                      onClick={(e) => { e.stopPropagation(); playSound('click'); setOpenedSwitchId(true); setSwitchTab('cli'); }}
                       className="text-[9px] bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20 px-2.5 py-1 rounded hover:bg-[#22c55e] hover:text-black font-mono font-bold"
                     >
                       CLI SWITCH
