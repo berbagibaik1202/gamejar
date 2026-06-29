@@ -227,6 +227,66 @@ export default function App() {
   });
   const [switchCreatedVlans, setSwitchCreatedVlans] = useState<number[]>([1]);
 
+  // Draggable Connections Widget states
+  const [connectionsWidgetPos, setConnectionsWidgetPos] = useState({ x: 16, y: 16 }); // offset from right: 16px, top: 16px
+  const [isDraggingConnections, setIsDraggingConnections] = useState(false);
+  const dragStartRef = useRef({ mouseX: 0, mouseY: 0, widgetX: 0, widgetY: 0 });
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    // Only allow dragging when left click is used
+    if (e.button !== 0) return;
+    setIsDraggingConnections(true);
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      widgetX: connectionsWidgetPos.x,
+      widgetY: connectionsWidgetPos.y
+    };
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingConnections) return;
+      const dx = e.clientX - dragStartRef.current.mouseX;
+      const dy = e.clientY - dragStartRef.current.mouseY;
+      
+      // Since it is positioned from 'right' and 'top', moving mouse right (dx > 0) decreases 'right' position.
+      // Moving mouse down (dy > 0) increases 'top' position.
+      setConnectionsWidgetPos({
+        x: Math.max(0, dragStartRef.current.widgetX - dx),
+        y: Math.max(0, dragStartRef.current.widgetY + dy)
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingConnections(false);
+    };
+
+    if (isDraggingConnections) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingConnections]);
+
+  // Synchronize cli target when modal is opened
+  useEffect(() => {
+    if (openedSwitchId) {
+      setCurrentCliTarget('switch');
+    }
+  }, [openedSwitchId]);
+
+  useEffect(() => {
+    if (openedRouterId) {
+      setCurrentCliTarget('router');
+    }
+  }, [openedRouterId]);
+
   // Router config state
   const [routerDhcpPool, setRouterDhcpPool] = useState({ active: false, network: '', gateway: '' });
   const [routerAcl, setRouterAcl] = useState<Array<{ type: 'deny' | 'permit', src: string, dst: string, port?: number }>>([]);
@@ -1539,19 +1599,46 @@ IP Configuration:
 
               </div>
 
-              {/* OVERLAY OBJECTIVE CHECKLIST BANNER */}
-              <div className="absolute top-4 right-4 w-52 bg-[#1a1c22]/90 border border-white/10 p-3.5 rounded-lg shadow-2xl backdrop-blur z-20 pointer-events-none">
-                <p className="text-[9px] text-slate-500 uppercase font-mono tracking-widest mb-2 font-extrabold">Daftar Koneksi Kabel</p>
+              {/* OVERLAY OBJECTIVE CHECKLIST BANNER (DRAGGABLE WIDGET) */}
+              <div 
+                style={{ 
+                  top: `${connectionsWidgetPos.y}px`, 
+                  right: `${connectionsWidgetPos.x}px` 
+                }}
+                className={`absolute w-56 bg-[#1a1c22]/95 border ${isDraggingConnections ? 'border-[#22c55e]' : 'border-white/10'} p-3 rounded-lg shadow-2xl backdrop-blur-md z-30 select-none transition-shadow duration-150 ${isDraggingConnections ? 'shadow-green-500/10 shadow-lg' : ''}`}
+              >
+                {/* Drag Handle */}
+                <div 
+                  onMouseDown={handleDragStart}
+                  className="flex items-center justify-between border-b border-white/5 pb-1.5 mb-2 cursor-grab active:cursor-grabbing text-slate-400 hover:text-white transition-colors"
+                  title="Klik dan tahan untuk menggeser widget ini"
+                >
+                  <div className="flex items-center gap-1.5">
+                    {/* Grip Icon */}
+                    <div className="grid grid-cols-2 gap-0.5 opacity-50 shrink-0">
+                      <span className="w-1 h-1 bg-current rounded-full" />
+                      <span className="w-1 h-1 bg-current rounded-full" />
+                      <span className="w-1 h-1 bg-current rounded-full" />
+                      <span className="w-1 h-1 bg-current rounded-full" />
+                    </div>
+                    <span className="text-[9px] uppercase font-mono tracking-wider font-extrabold select-none">Koneksi Kabel</span>
+                  </div>
+                  <span className="text-[8px] font-mono bg-white/5 text-slate-500 px-1 rounded">WIDGET</span>
+                </div>
+
                 {connections.length === 0 ? (
-                  <p className="text-[10px] text-slate-500 italic">Belum ada kabel terhubung.</p>
+                  <p className="text-[10px] text-slate-500 italic py-1 text-center">Belum ada kabel terhubung.</p>
                 ) : (
                   <div className="space-y-1 max-h-32 overflow-y-auto">
                     {connections.map((c, idx) => (
                       <div key={idx} className="flex justify-between items-center gap-1.5 text-[9px] bg-white/5 p-1 rounded">
-                        <span className="truncate max-w-[120px] text-slate-400 font-mono">{c.from.toUpperCase()}({c.fromPort})➔{c.to.toUpperCase()}({c.toPort})</span>
+                        <span className="truncate max-w-[130px] text-slate-400 font-mono" title={`${c.from.toUpperCase()}(${c.fromPort}) ➔ ${c.to.toUpperCase()}(${c.toPort})`}>
+                          {c.from.toUpperCase()}({c.fromPort})➔{c.to.toUpperCase()}({c.toPort})
+                        </span>
                         <button 
                           onClick={(e) => { e.stopPropagation(); removeConnection(idx); }}
-                          className="text-red-400 hover:text-red-300 px-1 pointer-events-auto"
+                          className="text-red-400 hover:text-red-300 px-1 hover:bg-white/5 rounded transition-all"
+                          title="Cabut kabel"
                         >
                           ✕
                         </button>
@@ -2058,6 +2145,579 @@ IP Configuration:
                   </div>
                 </div>
               )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* DETAILED DIALOG: SWITCH NETWORK CONFIGURATION OVERLAY */}
+      {openedSwitchId && (
+        <div id="switch-dialog-overlay" className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="w-[620px] h-[520px] bg-[#15171b] border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+            
+            {/* Modal Title bar */}
+            <div className="bg-slate-900/90 px-4 py-3 border-b border-[#22c55e]/30 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#22c55e]">
+                <Server className="w-4 h-4" />
+                <span className="text-xs font-bold uppercase font-mono">Switch Utama - GUI Configuration</span>
+              </div>
+              <button 
+                onClick={() => { playSound('click'); setOpenedSwitchId(false); }}
+                className="text-slate-400 hover:text-white text-xs font-mono bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded"
+              >
+                ✕ Tutup
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="bg-[#191c22] border-b border-white/5 px-4 flex gap-1 pt-1.5 shrink-0">
+              <button 
+                onClick={() => { playSound('click'); setSwitchTab('vlan'); }}
+                className={`text-xs px-3 py-1.5 rounded-t-lg font-mono flex items-center gap-1.5 transition-all ${
+                  switchTab === 'vlan' ? 'bg-[#15171b] border-t border-x border-white/10 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Network className="w-3.5 h-3.5" /> VLAN Database & Ports
+              </button>
+              <button 
+                onClick={() => { playSound('click'); setSwitchTab('cli'); setCurrentCliTarget('switch'); }}
+                className={`text-xs px-3 py-1.5 rounded-t-lg font-mono flex items-center gap-1.5 transition-all ${
+                  switchTab === 'cli' ? 'bg-[#15171b] border-t border-x border-white/10 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <TerminalIcon className="w-3.5 h-3.5" /> Cisco Switch CLI
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col min-h-0 bg-[#0c0e12]">
+              {switchTab === 'vlan' ? (
+                <div className="space-y-4 flex flex-col h-full">
+                  
+                  {/* Row 1: VLAN Database */}
+                  <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-3">
+                    <h4 className="text-xs font-bold text-[#22c55e] uppercase tracking-wider font-mono">1. VLAN Database Manager</h4>
+                    <p className="text-[10px] text-slate-400 font-sans">Buat VLAN baru sebelum mengalokasikan port. Standar VLAN ID berkisar antara 1 - 4094.</p>
+                    
+                    <div className="grid grid-cols-3 gap-2 items-end">
+                      <div>
+                        <label className="block text-[9px] font-mono text-slate-400 mb-1">VLAN ID (Nomor)</label>
+                        <input 
+                          type="number" 
+                          placeholder="Contoh: 10"
+                          value={vlanIdInput}
+                          onChange={(e) => setVlanIdInput(e.target.value)}
+                          className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:border-[#22c55e]/50 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-mono text-slate-400 mb-1">Nama VLAN</label>
+                        <input 
+                          type="text" 
+                          placeholder="Contoh: HR"
+                          value={vlanNameInput}
+                          onChange={(e) => setVlanNameInput(e.target.value)}
+                          className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:border-[#22c55e]/50 focus:outline-none"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const vid = parseInt(vlanIdInput);
+                          if (isNaN(vid) || vid < 1 || vid > 4094) {
+                            playSound('fail');
+                            alert('VLAN ID harus berupa angka antara 1 dan 4094!');
+                            return;
+                          }
+                          if (switchCreatedVlans.includes(vid)) {
+                            playSound('fail');
+                            alert(`VLAN ${vid} sudah ada!`);
+                            return;
+                          }
+                          playSound('click');
+                          setSwitchCreatedVlans(prev => [...prev, vid]);
+                          setTerminalLogs(prev => [
+                            ...prev, 
+                            `[GUI CONFIG] Created VLAN ${vid} with name: ${vlanNameInput || `VLAN${vid}`}`
+                          ]);
+                          setVlanIdInput('');
+                          setVlanNameInput('');
+                        }}
+                        className="bg-[#22c55e] hover:bg-green-400 text-black font-mono text-xs font-bold py-1.5 px-3 rounded flex items-center justify-center gap-1.5"
+                      >
+                        + Tambah VLAN
+                      </button>
+                    </div>
+
+                    {/* Created VLANs list */}
+                    <div className="mt-2">
+                      <p className="text-[9px] font-mono text-slate-400 mb-1.5">VLAN Aktif di Switch:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {switchCreatedVlans.map(vid => (
+                          <div key={vid} className="bg-black/40 border border-white/5 rounded px-2 py-0.5 text-[10px] font-mono text-white flex items-center gap-2">
+                            <span className="text-[#22c55e]">VLAN {vid}</span>
+                            <span className="text-slate-500">({vid === 1 ? 'default' : vid === 10 ? 'HR' : vid === 20 ? 'Finance' : 'Custom'})</span>
+                            {vid !== 1 && (
+                              <button 
+                                onClick={() => {
+                                  playSound('fail');
+                                  setSwitchCreatedVlans(prev => prev.filter(v => v !== vid));
+                                  // Reset ports configured with this VLAN
+                                  setSwitchVlans(prev => {
+                                    const updated = { ...prev };
+                                    Object.keys(updated).forEach(p => {
+                                      if (updated[p] === vid) updated[p] = 1;
+                                    });
+                                    return updated;
+                                  });
+                                  setTerminalLogs(prev => [...prev, `[GUI CONFIG] Deleted VLAN ${vid}`]);
+                                }}
+                                className="text-red-400 hover:text-red-300 ml-1"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Port Allocation */}
+                  <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-3 flex-1 flex flex-col min-h-0">
+                    <h4 className="text-xs font-bold text-[#22c55e] uppercase tracking-wider font-mono">2. Alokasi Port Switch ke VLAN</h4>
+                    <p className="text-[10px] text-slate-400 font-sans mb-2">Tentukan VLAN keanggotaan untuk port aktif di Switch Utama. Port PC HR harus berada di VLAN 10, Port Finance di VLAN 20.</p>
+                    
+                    <div className="flex-1 overflow-y-auto space-y-2 max-h-48 pr-1">
+                      {['Fa0/1', 'Fa0/2', 'Fa0/3', 'Fa0/4', 'Fa0/5', 'Fa0/6', 'Fa0/7', 'Fa0/8'].map((port) => {
+                        const currentVlan = switchVlans[port] || 1;
+                        return (
+                          <div key={port} className="flex justify-between items-center bg-black/40 p-2 rounded border border-white/5 text-xs font-mono">
+                            <div className="flex items-center gap-3">
+                              <span className="text-[#22c55e] font-bold">{port}</span>
+                              <span className="text-[10px] text-slate-500 font-sans">
+                                {port === 'Fa0/1' || port === 'Fa0/2' ? '(PC-1 / PC-2 HR)' : port === 'Fa0/3' || port === 'Fa0/4' ? '(PC-3 Finance)' : '(Kosong)'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] text-slate-400">VLAN:</span>
+                              <select 
+                                value={currentVlan}
+                                onChange={(e) => {
+                                  const vid = parseInt(e.target.value);
+                                  playSound('click');
+                                  setSwitchVlans(prev => ({ ...prev, [port]: vid }));
+                                  setTerminalLogs(prev => [...prev, `[GUI CONFIG] Interface ${port} switched to VLAN ${vid}`]);
+                                }}
+                                className="bg-slate-900 border border-white/15 text-white text-xs font-mono rounded px-2 py-1 focus:outline-none focus:border-[#22c55e]/50"
+                              >
+                                {switchCreatedVlans.map(vid => (
+                                  <option key={vid} value={vid}>
+                                    VLAN {vid} ({vid === 1 ? 'default' : vid === 10 ? 'HR' : vid === 20 ? 'Finance' : 'Custom'})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                </div>
+              ) : (
+                /* Embedded CLI Switch Tab */
+                <div className="flex-1 flex flex-col min-h-0 bg-black rounded-lg border border-white/10 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-white/5 border-b border-white/10 flex justify-between items-center shrink-0">
+                    <span className="text-[10px] text-green-400 uppercase tracking-wider font-mono">Cisco IOS Switch Terminal</span>
+                    <span className="text-[9px] text-slate-500 font-mono">Mode: {cliMode.toUpperCase()}</span>
+                  </div>
+
+                  <div className="flex-1 p-3 overflow-y-auto font-mono text-xs text-green-400 space-y-1">
+                    {terminalLogs.map((log, idx) => (
+                      <pre key={idx} className="whitespace-pre-wrap font-mono break-all">{log}</pre>
+                    ))}
+                    <div ref={terminalBottomRef} />
+                  </div>
+
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleCliSubmit(e);
+                    }}
+                    className="border-t border-white/10 bg-black flex items-center shrink-0"
+                  >
+                    <span className="text-green-500 font-bold pl-3 pr-1 text-xs font-mono">
+                      {currentCliTarget === 'switch' ? 'Switch' : 'Router'}
+                      {cliMode === 'conf' ? '(config)' : cliMode === 'interface' ? '(config-if)' : cliMode === 'dhcp' ? '(config-dhcp)' : cliMode === 'vlan' ? '(config-vlan)' : ''}
+                      {cliMode === 'user' ? '>' : '#'}
+                    </span>
+                    <input 
+                      type="text" 
+                      value={cliInput}
+                      onChange={(e) => setCliInput(e.target.value)}
+                      placeholder="Ketik perintah Switch di sini..."
+                      className="flex-1 bg-transparent border-none text-green-400 font-mono text-xs p-2.5 outline-none focus:ring-0"
+                    />
+                  </form>
+                </div>
+              )}
+            </div>
+            
+            {/* Footer */}
+            <div className="bg-[#191c22] border-t border-white/5 px-4 py-3 flex justify-between items-center shrink-0">
+              <p className="text-[10px] text-slate-400 font-sans">
+                💡 Tips: Anda bisa menggunakan GUI di tab sebelah kiri untuk konfigurasi instan!
+              </p>
+              <button 
+                onClick={() => { playSound('click'); setOpenedSwitchId(false); }}
+                className="bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/30 px-4 py-1.5 rounded text-xs font-bold font-mono hover:bg-[#22c55e] hover:text-black transition-all"
+              >
+                Selesai & Simpan
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* DETAILED DIALOG: ROUTER NETWORK CONFIGURATION OVERLAY */}
+      {openedRouterId && (
+        <div id="router-dialog-overlay" className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="w-[620px] h-[520px] bg-[#15171b] border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+            
+            {/* Modal Title bar */}
+            <div className="bg-slate-900/90 px-4 py-3 border-b border-[#22c55e]/30 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#22c55e]">
+                <Cpu className="w-4 h-4" />
+                <span className="text-xs font-bold uppercase font-mono">Router Utama - GUI Configuration</span>
+              </div>
+              <button 
+                onClick={() => { playSound('click'); setOpenedRouterId(false); }}
+                className="text-slate-400 hover:text-white text-xs font-mono bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded"
+              >
+                ✕ Tutup
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="bg-[#191c22] border-b border-white/5 px-4 flex gap-1 pt-1.5 shrink-0">
+              <button 
+                onClick={() => { playSound('click'); setRouterTab('dhcp'); }}
+                className={`text-xs px-3 py-1.5 rounded-t-lg font-mono flex items-center gap-1.5 transition-all ${
+                  routerTab === 'dhcp' ? 'bg-[#15171b] border-t border-x border-white/10 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Network className="w-3.5 h-3.5" /> DHCP Server Pool
+              </button>
+              <button 
+                onClick={() => { playSound('click'); setRouterTab('acl'); }}
+                className={`text-xs px-3 py-1.5 rounded-t-lg font-mono flex items-center gap-1.5 transition-all ${
+                  routerTab === 'acl' ? 'bg-[#15171b] border-t border-x border-white/10 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <ShieldAlert className="w-3.5 h-3.5" /> Security ACL Firewall
+              </button>
+              <button 
+                onClick={() => { playSound('click'); setRouterTab('cli'); setCurrentCliTarget('router'); }}
+                className={`text-xs px-3 py-1.5 rounded-t-lg font-mono flex items-center gap-1.5 transition-all ${
+                  routerTab === 'cli' ? 'bg-[#15171b] border-t border-x border-white/10 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <TerminalIcon className="w-3.5 h-3.5" /> Cisco Router CLI
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col min-h-0 bg-[#0c0e12]">
+              {routerTab === 'dhcp' ? (
+                <div className="space-y-4">
+                  
+                  {/* DHCP Panel */}
+                  <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-3">
+                    <h4 className="text-xs font-bold text-[#22c55e] uppercase tracking-wider font-mono">Konfigurasi DHCP Server (Misi 4)</h4>
+                    <p className="text-[10px] text-slate-400 font-sans">Aktifkan Router Utama sebagai DHCP Server agar PC Client mendapatkan IP Address dinamis secara otomatis.</p>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[9px] font-mono text-slate-400 mb-1">Nama Pool DHCP (IP DHCP Pool)</label>
+                        <input 
+                          type="text" 
+                          value={dhcpPoolNameInput}
+                          onChange={(e) => setDhcpPoolNameInput(e.target.value)}
+                          className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:border-[#22c55e]/50 focus:outline-none"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[9px] font-mono text-slate-400 mb-1">Network Subnet</label>
+                          <input 
+                            type="text" 
+                            value={dhcpNetworkInput}
+                            onChange={(e) => setDhcpNetworkInput(e.target.value)}
+                            className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:border-[#22c55e]/50 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-mono text-slate-400 mb-1">Default Gateway Router IP</label>
+                          <input 
+                            type="text" 
+                            value={dhcpGatewayInput}
+                            onChange={(e) => setDhcpGatewayInput(e.target.value)}
+                            className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:border-[#22c55e]/50 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex gap-2">
+                        <button 
+                          onClick={() => {
+                            if (!dhcpPoolNameInput.trim() || !dhcpNetworkInput.trim() || !dhcpGatewayInput.trim()) {
+                              playSound('fail');
+                              alert('Semua bidang parameter DHCP harus diisi!');
+                              return;
+                            }
+                            playSound('click');
+                            setRouterDhcpPool({
+                              active: true,
+                              network: dhcpNetworkInput,
+                              gateway: dhcpGatewayInput
+                            });
+                            setTerminalLogs(prev => [
+                              ...prev,
+                              `[GUI CONFIG] DHCP Pool "${dhcpPoolNameInput}" initialized.`,
+                              `[GUI CONFIG] Network configured: ${dhcpNetworkInput} 255.255.255.0`,
+                              `[GUI CONFIG] Default gateway: ${dhcpGatewayInput}`
+                            ]);
+                          }}
+                          className="flex-1 bg-[#22c55e] hover:bg-green-400 text-black font-mono text-xs font-bold py-2 rounded flex items-center justify-center gap-1.5"
+                        >
+                          ⚡ Aktifkan DHCP Pool Server
+                        </button>
+                        {routerDhcpPool.active && (
+                          <button 
+                            onClick={() => {
+                              playSound('fail');
+                              setRouterDhcpPool({ active: false, network: '', gateway: '' });
+                              setTerminalLogs(prev => [...prev, `[GUI CONFIG] DHCP Pool disabled / removed.`]);
+                            }}
+                            className="bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-900/30 font-mono text-xs font-bold py-2 px-4 rounded"
+                          >
+                            Nonaktifkan
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Current DHCP State status banner */}
+                  <div className="p-3 bg-black/40 border border-white/5 rounded-xl flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-400 font-sans">Status Server DHCP:</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${routerDhcpPool.active ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                      {routerDhcpPool.active ? '🟢 ACTIVE' : '🔴 DISABLED / NO POOL'}
+                    </span>
+                  </div>
+
+                </div>
+              ) : routerTab === 'acl' ? (
+                <div className="space-y-4">
+                  
+                  {/* ACL Rules Setup */}
+                  <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-3">
+                    <h4 className="text-xs font-bold text-[#22c55e] uppercase tracking-wider font-mono">Access Control List (ACL) - Misi 5</h4>
+                    <p className="text-[10px] text-slate-400 font-sans">Blokir trafik SSH (port 22) dari IP penyerang 10.10.10.50 menuju ke Web Server 192.168.1.100.</p>
+                    
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[9px] font-mono text-slate-400 mb-1">Source IP Address (IP Penyerang)</label>
+                          <input 
+                            type="text" 
+                            value={aclSourceInput}
+                            onChange={(e) => setAclSourceInput(e.target.value)}
+                            className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:border-[#22c55e]/50 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-mono text-slate-400 mb-1">Destination IP Address (Server Utama)</label>
+                          <input 
+                            type="text" 
+                            value={aclDestInput}
+                            onChange={(e) => setAclDestInput(e.target.value)}
+                            className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:border-[#22c55e]/50 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => {
+                            playSound('click');
+                            setRouterAcl(prev => [...prev, { type: 'deny', src: aclSourceInput, dst: aclDestInput, port: 22 }]);
+                            setTerminalLogs(prev => [...prev, `[GUI CONFIG] Added ACL rule: deny tcp host ${aclSourceInput} host ${aclDestInput} eq 22`]);
+                          }}
+                          className="flex-1 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 font-mono text-xs font-bold py-1.5 px-3 rounded text-center"
+                        >
+                          🚫 Blokir SSH (Port 22) dari {aclSourceInput}
+                        </button>
+                        <button 
+                          onClick={() => {
+                            playSound('click');
+                            setRouterAcl(prev => [...prev, { type: 'permit', src: 'any', dst: 'any' }]);
+                            setTerminalLogs(prev => [...prev, `[GUI CONFIG] Added ACL rule: permit ip any any`]);
+                          }}
+                          className="bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 font-mono text-xs font-bold py-1.5 px-3 rounded"
+                        >
+                          ✅ Izinkan IP Any Any
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Current Active ACL rules list */}
+                  <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-2">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-bold text-slate-300 font-mono">Daftar Aturan ACL Aktif (access-list 101)</h4>
+                      {routerAcl.length > 0 && (
+                        <button 
+                          onClick={() => {
+                            playSound('fail');
+                            setRouterAcl([]);
+                            setTerminalLogs(prev => [...prev, `[GUI CONFIG] Cleared all ACL Rules (no access-list 101)`]);
+                          }}
+                          className="text-[10px] text-red-400 hover:underline font-mono"
+                        >
+                          Hapus Semua
+                        </button>
+                      )}
+                    </div>
+                    
+                    {routerAcl.length === 0 ? (
+                      <p className="text-[10px] text-slate-500 italic py-1 text-center font-sans">Belum ada aturan ACL terkonfigurasi.</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                        {routerAcl.map((rule, idx) => (
+                          <div key={idx} className="flex justify-between items-center bg-black/40 p-2 rounded border border-white/5 text-[11px] font-mono">
+                            <span className={rule.type === 'deny' ? 'text-red-400' : 'text-green-400'}>
+                              {rule.type.toUpperCase()}: Source {rule.src} ➔ Dest {rule.dst} {rule.port ? `(Port ${rule.port})` : ''}
+                            </span>
+                            <button 
+                              onClick={() => {
+                                playSound('fail');
+                                setRouterAcl(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="text-slate-500 hover:text-white"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Apply ACL to Interface */}
+                  <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-3">
+                    <h4 className="text-xs font-bold text-slate-300 font-mono">Terapkan ACL ke Interface Router</h4>
+                    <p className="text-[10px] text-slate-400 font-sans">Agar ACL berfungsi, terapkan ke interface GigabitEthernet0/0 pada arah "Inbound (in)".</p>
+                    
+                    <div className="grid grid-cols-2 gap-3 items-end">
+                      <div>
+                        <label className="block text-[9px] font-mono text-slate-400 mb-1">Pilih Interface</label>
+                        <select 
+                          value={routerAclApplied?.interface || 'Gi0/0'} 
+                          onChange={(e) => setRouterAclApplied(prev => prev ? { ...prev, interface: e.target.value } : { interface: e.target.value, direction: 'in' })}
+                          className="w-full bg-black border border-white/15 text-white text-xs font-mono rounded px-2.5 py-1.5 focus:outline-none focus:border-[#22c55e]/50"
+                        >
+                          <option value="Gi0/0 font-mono">Gi0/0 (Fast Local LAN)</option>
+                          <option value="Console font-mono">Console Interface</option>
+                        </select>
+                      </div>
+                      <div className="flex gap-2 font-mono text-xs">
+                        <button 
+                          onClick={() => {
+                            playSound('click');
+                            setRouterAclApplied({ interface: 'Gi0/0', direction: 'in' });
+                            setTerminalLogs(prev => [...prev, `[GUI CONFIG] Applied ACL 101 in on interface Gi0/0`]);
+                          }}
+                          className="flex-1 bg-[#22c55e] hover:bg-green-400 text-black font-bold py-1.5 rounded"
+                        >
+                          Terapkan ACL Gi0/0 (IN)
+                        </button>
+                        {routerAclApplied && (
+                          <button 
+                            onClick={() => {
+                              playSound('fail');
+                              setRouterAclApplied(null);
+                              setTerminalLogs(prev => [...prev, `[GUI CONFIG] Removed ACL filter from interface.`]);
+                            }}
+                            className="bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-900/30 font-bold py-1.5 px-3 rounded"
+                          >
+                            Batal
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {routerAclApplied && (
+                      <div className="text-[10px] text-green-400 font-mono bg-green-950/20 border border-green-500/20 p-2 rounded flex items-center gap-1.5">
+                        <span>🔒 Status: ACL 101 telah diterapkan pada interface {routerAclApplied.interface} arah {routerAclApplied.direction.toUpperCase()}!</span>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              ) : (
+                /* Embedded CLI Router Tab */
+                <div className="flex-1 flex flex-col min-h-0 bg-black rounded-lg border border-white/10 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-white/5 border-b border-white/10 flex justify-between items-center shrink-0">
+                    <span className="text-[10px] text-green-400 uppercase tracking-wider font-mono">Cisco IOS Router Terminal</span>
+                    <span className="text-[9px] text-slate-500 font-mono">Mode: {cliMode.toUpperCase()}</span>
+                  </div>
+
+                  <div className="flex-1 p-3 overflow-y-auto font-mono text-xs text-green-400 space-y-1">
+                    {terminalLogs.map((log, idx) => (
+                      <pre key={idx} className="whitespace-pre-wrap font-mono break-all">{log}</pre>
+                    ))}
+                    <div ref={terminalBottomRef} />
+                  </div>
+
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleCliSubmit(e);
+                    }}
+                    className="border-t border-white/10 bg-black flex items-center shrink-0"
+                  >
+                    <span className="text-green-500 font-bold pl-3 pr-1 text-xs font-mono">
+                      {currentCliTarget === 'switch' ? 'Switch' : 'Router'}
+                      {cliMode === 'conf' ? '(config)' : cliMode === 'interface' ? '(config-if)' : cliMode === 'dhcp' ? '(config-dhcp)' : cliMode === 'vlan' ? '(config-vlan)' : ''}
+                      {cliMode === 'user' ? '>' : '#'}
+                    </span>
+                    <input 
+                      type="text" 
+                      value={cliInput}
+                      onChange={(e) => setCliInput(e.target.value)}
+                      placeholder="Ketik perintah Router di sini..."
+                      className="flex-1 bg-transparent border-none text-green-400 font-mono text-xs p-2.5 outline-none focus:ring-0"
+                    />
+                  </form>
+                </div>
+              )}
+            </div>
+            
+            {/* Footer */}
+            <div className="bg-[#191c22] border-t border-white/5 px-4 py-3 flex justify-between items-center shrink-0">
+              <p className="text-[10px] text-slate-400 font-sans">
+                💡 Tips: Anda bisa menggunakan GUI di tab sebelah kiri untuk konfigurasi instan!
+              </p>
+              <button 
+                onClick={() => { playSound('click'); setOpenedRouterId(false); }}
+                className="bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/30 px-4 py-1.5 rounded text-xs font-bold font-mono hover:bg-[#22c55e] hover:text-black transition-all"
+              >
+                Selesai & Simpan
+              </button>
             </div>
 
           </div>
