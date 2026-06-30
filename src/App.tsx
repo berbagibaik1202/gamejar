@@ -1360,15 +1360,7 @@ IP Configuration:
           <div className="max-w-4xl w-full text-center mb-8 flex flex-col items-center">
             <h2 className="text-4xl font-extrabold text-white tracking-tight mb-2">Pilih Misi Praktikum Jaringan</h2>
             <p className="text-slate-400 text-sm mb-4">Selesaikan simulasi laboratorium TKJ untuk naik level, kumpulkan XP, dan jadilah Ahli Infrastruktur Jaringan SMK!</p>
-            <button 
-              onClick={() => {
-                playSound('success');
-                setUnlockedMissions([1, 2, 3, 4, 5]);
-              }}
-              className="px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 text-xs font-mono font-bold rounded-lg transition-all flex items-center gap-2 shadow-lg shadow-yellow-500/5 cursor-pointer"
-            >
-              🔓 Developer Mode: Buka Semua Misi
-            </button>
+
           </div>
 
           {/* Lobby Cards Grid */}
