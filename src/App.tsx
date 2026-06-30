@@ -101,6 +101,20 @@ const MISSIONS_DATA: Mission[] = [
       { id: 'm5_acl_permit', text: 'Tambahkan aturan permit ip any any di ACL 101', completed: false },
       { id: 'm5_acl_apply', text: 'Terapkan ACL 101 pada interface Gi0/0 arah masuk (in)', completed: false }
     ]
+  },
+  {
+    id: 6,
+    code: 'M06',
+    title: 'Routing Statis Default',
+    subtitle: 'Menghubungkan ke Jaringan Luar',
+    description: 'PC di Lab Jaringan tidak bisa mengakses internet (DNS 8.8.8.8) karena Router Utama belum memiliki Rute Statis Default. Konfigurasikan rute statis menuju gateway ISP luar (10.10.10.1) untuk membuka koneksi internet.',
+    difficulty: 'Sedang',
+    xpReward: 2200,
+    technicalGuide: '1. Buka CLI Router Utama (klik Router Utama, pilih tab CLI CONSOLE).\n2. Masuk ke mode konfigurasi global: ketik "enable", lalu "configure terminal".\n3. Masukkan perintah rute default: "ip route 0.0.0.0 0.0.0.0 10.10.10.1".\n4. Buka PC-1 (Dept HR) -> Desktop -> Command Prompt, lakukan uji koneksi dengan mengetik "ping 8.8.8.8".',
+    objectives: [
+      { id: 'm6_static_route', text: 'Konfigurasi rute default "ip route 0.0.0.0 0.0.0.0 10.10.10.1" di Router Utama', completed: false },
+      { id: 'm6_ping_dns', text: 'Lakukan ping ke 8.8.8.8 dari PC-1 untuk memverifikasi koneksi internet', completed: false }
+    ]
   }
 ];
 
@@ -134,6 +148,7 @@ const WIRE_STYLES: { [key: string]: string } = {
 // ============================================================================
 export default function App() {
   // Game state
+  const [showWelcomeSplash, setShowWelcomeSplash] = useState<boolean>(true);
   const [currentScreen, setCurrentScreen] = useState<'lobby' | 'game' | 'handbook'>('lobby');
   const [xp, setXp] = useState<number>(0);
   const [unlockedMissions, setUnlockedMissions] = useState<number[]>([1]);
@@ -336,6 +351,7 @@ export default function App() {
   const [routerDhcpPool, setRouterDhcpPool] = useState({ active: false, network: '', gateway: '' });
   const [routerAcl, setRouterAcl] = useState<Array<{ type: 'deny' | 'permit', src: string, dst: string, port?: number }>>([]);
   const [routerAclApplied, setRouterAclApplied] = useState<{ interface: string, direction: 'in' | 'out' } | null>(null);
+  const [routerStaticRoute, setRouterStaticRoute] = useState<string | null>(null);
 
   // AI Assistant Chat state
   const [aiChat, setAiChat] = useState<Array<{ sender: 'user' | 'assistant', text: string }>>([
@@ -400,6 +416,7 @@ export default function App() {
     setRouterDhcpPool({ active: false, network: '', gateway: '' });
     setRouterAcl([]);
     setRouterAclApplied(null);
+    setRouterStaticRoute(null);
     setCrimpPins(['', '', '', '', '', '', '', '']);
     setSelectedWireColor(null);
     setIsCrimpingSuccess(false);
@@ -488,6 +505,23 @@ export default function App() {
         ...initialLogs,
         `🚨 PERINGATAN KEAMANAN: Terdeteksi upaya brute-force SSH (Port 22) dari IP luar 10.10.10.50!`,
         `👉 Konfigurasikan aturan Access Control List (ACL) nomor 101 pada Router Utama untuk memblokirnya.`
+      ]);
+    } else if (missionId === 6) {
+      setConnections([
+        { from: 'router', fromPort: 'Gi0/0', to: 'switch', toPort: 'Fa0/8', type: 'utp' },
+        { from: 'pc1', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/1', type: 'utp' },
+        { from: 'pc2', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/2', type: 'utp' },
+        { from: 'pc3', fromPort: 'Eth0', to: 'switch', toPort: 'Fa0/3', type: 'utp' }
+      ]);
+      setPc1Ip({ ip: '192.168.1.2', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc2Ip({ ip: '192.168.1.10', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setPc3Ip({ ip: '192.168.1.11', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setLaptopIp({ ip: '192.168.1.5', mask: '255.255.255.0', gw: '192.168.1.1', dns: '8.8.8.8', mode: 'static' });
+      setTerminalLogs([
+        ...initialLogs,
+        `🌐 KONEKSI INTERNET TERPUTUS: PC Klien tidak dapat berkomunikasi ke jaringan luar (8.8.8.8).`,
+        `👉 Masuk ke Router CLI, lalu tambahkan rute statis default: "ip route 0.0.0.0 0.0.0.0 10.10.10.1".`,
+        `👉 Setelah itu, lakukan uji ping ke 8.8.8.8 dari Terminal PC-1!`
       ]);
     }
   };
@@ -648,6 +682,16 @@ export default function App() {
       }
     }
 
+    // Mission 6: Static Routing
+    if (activeMission.id === 6) {
+      // Obj 1: Static default route set
+      const isRouteSet = routerStaticRoute === '10.10.10.1';
+      if (isRouteSet !== updatedObjectives[0].completed) {
+        updatedObjectives[0].completed = isRouteSet;
+        stateChanged = true;
+      }
+    }
+
     if (stateChanged) {
       setActiveMission(prev => {
         if (!prev || prev.id !== activeMission.id) return prev;
@@ -660,6 +704,7 @@ export default function App() {
           if (prev.id === 3) shouldUpdate = true;
           if (prev.id === 4) shouldUpdate = true;
           if (prev.id === 5) shouldUpdate = true;
+          if (prev.id === 6 && obj.id === 'm6_static_route') shouldUpdate = true;
 
           return {
             ...obj,
@@ -669,7 +714,7 @@ export default function App() {
         return { ...prev, objectives: merged };
       });
     }
-  }, [connections, pc1Ip, pc2Ip, pc3Ip, switchVlans, switchCreatedVlans, routerDhcpPool, routerAcl, routerAclApplied, activeMission]);
+  }, [connections, pc1Ip, pc2Ip, pc3Ip, switchVlans, switchCreatedVlans, routerDhcpPool, routerAcl, routerAclApplied, routerStaticRoute, activeMission]);
 
   // ============================================================================
   // MISSION ACCOMPLISHED DETECTOR
@@ -1000,6 +1045,19 @@ export default function App() {
       } else {
         output.push(`% Command rejected. Must be in interface mode.`);
       }
+    } else if (cmdLower.startsWith('ip route ')) {
+      if (cliMode === 'conf' && currentCliTarget === 'router') {
+        const parts = cmdLower.split(/\s+/);
+        if (parts[2] === '0.0.0.0' && parts[3] === '0.0.0.0' && parts[4] === '10.10.10.1') {
+          setRouterStaticRoute('10.10.10.1');
+          output.push(`Router(config)# ip route 0.0.0.0 0.0.0.0 10.10.10.1`);
+          output.push(`% Static default route configured successfully.`);
+        } else {
+          output.push(`% Invalid static route command parameters. Use "ip route 0.0.0.0 0.0.0.0 10.10.10.1" for the default ISP gateway.`);
+        }
+      } else {
+        output.push(`% Command rejected. Must be in config mode on Router.`);
+      }
     } else if (cmdLower === 'show vlan' || cmdLower === 'show vlan brief') {
       if (currentCliTarget === 'switch') {
         output.push(`
@@ -1143,6 +1201,39 @@ IP Configuration:
               }
               return prev;
             });
+          }
+        } else if (target === '8.8.8.8') {
+          if (routerStaticRoute === '10.10.10.1') {
+            setPcPromptLogs(prev => ({
+              ...prev,
+              [pcId]: [
+                ...prev[pcId],
+                'Reply from 8.8.8.8: Bytes=32 Time=35ms TTL=54',
+                'Reply from 8.8.8.8: Bytes=32 Time=38ms TTL=54',
+                'Reply from 8.8.8.8: Bytes=32 Time=32ms TTL=54',
+                'Ping statistics: 3 sent, 3 received, 0 lost (0% loss).'
+              ]
+            }));
+
+            setActiveMission(prev => {
+              if (prev?.id === 6 && pcId === 'pc1') {
+                const updated = prev.objectives.map(o => o.id === 'm6_ping_dns' ? { ...o, completed: true } : o);
+                return { ...prev, objectives: updated };
+              }
+              return prev;
+            });
+          } else {
+            setPcPromptLogs(prev => ({
+              ...prev,
+              [pcId]: [
+                ...prev[pcId],
+                'Request timed out. (No gateway route from router to host)',
+                'Request timed out.',
+                'Request timed out.',
+                'Ping statistics: 3 sent, 0 received, 3 lost (100% loss).',
+                '💡 Tip: Router Utama membutuhkan rute default ("ip route 0.0.0.0 0.0.0.0 10.10.10.1") agar PC Klien bisa terhubung ke Internet.'
+              ]
+            }));
           }
         } else if (target === '192.168.1.100' || target === 'tkj-server.net') {
           // Check firewall blocks for Mission 5 (Deny SSH port 22 vs permit other)
@@ -3184,6 +3275,70 @@ IP Configuration:
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* WELCOME SPLASH POPUP OVERLAY */}
+      {showWelcomeSplash && (
+        <div id="welcome-splash-overlay" className="fixed inset-0 bg-[#07090e]/95 backdrop-blur-xl flex items-center justify-center z-[60] p-4 font-sans animate-fade-in">
+          <div id="welcome-splash-container" className="bg-[#0e1115] border border-green-500/35 rounded-2xl p-8 max-w-lg w-full text-center relative shadow-2xl shadow-green-500/10 flex flex-col items-center justify-center gap-6 overflow-hidden">
+            
+            {/* Glowing neon background decor */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1 bg-gradient-to-r from-transparent via-green-500 to-transparent shadow-lg shadow-green-500/50" />
+            
+            {/* Circular network animated rings */}
+            <div className="relative flex items-center justify-center w-24 h-24 rounded-full bg-green-500/10 border border-green-500/20 mb-2">
+              <div className="absolute inset-0 rounded-full border border-green-500/20 animate-ping opacity-60" style={{ animationDuration: '3s' }} />
+              <div className="absolute inset-2 rounded-full border border-green-500/10 animate-pulse" />
+              <Network className="w-10 h-10 text-green-400" />
+            </div>
+
+            {/* Typography pairings */}
+            <div className="flex flex-col items-center gap-1">
+              <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 via-emerald-400 to-teal-500 tracking-wider font-mono">
+                GameJar
+              </h1>
+              <p className="text-[10px] font-extrabold tracking-[0.25em] text-slate-400 font-mono uppercase bg-white/5 py-1 px-4 rounded-full border border-white/5 shadow-inner">
+                By Nana Permana
+              </p>
+            </div>
+
+            {/* Description */}
+            <div className="text-slate-400 text-xs max-w-sm leading-relaxed text-center">
+              Aplikasi Media Pembelajaran Interaktif & Simulasi Praktikum Jaringan Komputer untuk siswa SMK Teknik Komputer & Jaringan (TKJ).
+            </div>
+
+            {/* Decorative system scanner divider */}
+            <div className="w-full flex items-center gap-4 px-8">
+              <div className="flex-1 h-px bg-gradient-to-r from-transparent to-green-500/20" />
+              <span className="text-[8px] text-green-500 font-mono uppercase tracking-widest animate-pulse">SYSTEM SECURE</span>
+              <div className="flex-1 h-px bg-gradient-to-l from-transparent to-green-500/20" />
+            </div>
+
+            {/* Tech badges */}
+            <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-left">
+              <div className="p-3 bg-[#12151c] rounded-xl border border-white/5 flex flex-col gap-0.5">
+                <span className="text-[8px] uppercase tracking-wider text-slate-500 font-bold">Jenis Platform</span>
+                <span className="text-xs font-bold text-slate-200 font-mono">CCNA / TKJ Simulator</span>
+              </div>
+              <div className="p-3 bg-[#12151c] rounded-xl border border-white/5 flex flex-col gap-0.5">
+                <span className="text-[8px] uppercase tracking-wider text-slate-500 font-bold">Ketersediaan</span>
+                <span className="text-xs font-bold text-green-400 font-mono">Offline-First Lab</span>
+              </div>
+            </div>
+
+            {/* Call to Action pulsing button */}
+            <button
+              onClick={() => {
+                playSound('success');
+                setShowWelcomeSplash(false);
+              }}
+              className="w-full max-w-sm py-4 px-6 bg-green-500 hover:bg-green-400 text-black font-extrabold text-xs rounded-xl tracking-widest transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-green-500/20 hover:shadow-green-500/30 flex items-center justify-center gap-2.5 cursor-pointer font-mono"
+            >
+              <Play className="w-4 h-4 fill-black text-black animate-pulse" /> LANJUTKAN SIMULASI
+            </button>
+
           </div>
         </div>
       )}
